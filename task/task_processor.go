@@ -20,10 +20,11 @@ type TaskProcessor interface {
 
 // TaskManager 任务管理器
 type TaskManager struct {
-	processors map[string]TaskProcessor
-	repoMgr    *repo.RepositoryManager
-	mu         sync.RWMutex
-	running    map[uint]context.CancelFunc // 正在运行的任务
+	processors     map[string]TaskProcessor
+	repoMgr        *repo.RepositoryManager
+	mu             sync.RWMutex
+	running        map[uint]context.CancelFunc // 正在运行的任务
+	recoveredTasks int64
 }
 
 // NewTaskManager 创建任务管理器
@@ -310,10 +311,10 @@ func (tm *TaskManager) processTask(ctx context.Context, task *entity.Task, proce
 			if err != nil {
 				failedItems++
 				utils.ErrorWithFields(map[string]interface{}{
-		"task_item_id": item.ID,
-		"error":        err.Error(),
-		"duration_ms":  itemDuration.Milliseconds(),
-	}, "处理任务项 %d 失败: %v，耗时: %v", item.ID, err, itemDuration)
+					"task_item_id": item.ID,
+					"error":        err.Error(),
+					"duration_ms":  itemDuration.Milliseconds(),
+				}, "处理任务项 %d 失败: %v，耗时: %v", item.ID, err, itemDuration)
 			} else {
 				successItems++
 				utils.Info("处理任务项 %d 成功，耗时: %v", item.ID, itemDuration)
@@ -396,8 +397,8 @@ func (tm *TaskManager) processTaskItem(ctx context.Context, taskID uint, item *e
 		utils.Error("处理任务项 %d 失败: %v，处理耗时: %v", item.ID, err, processDuration)
 
 		outputData := map[string]interface{}{
-			"error": err.Error(),
-			"time":  utils.GetCurrentTime(),
+			"error":       err.Error(),
+			"time":        utils.GetCurrentTime(),
 			"duration_ms": processDuration.Milliseconds(),
 		}
 		outputJSON, _ := json.Marshal(outputData)
@@ -416,8 +417,8 @@ func (tm *TaskManager) processTaskItem(ctx context.Context, taskID uint, item *e
 	var outputJSON string
 	if item.OutputData == "" {
 		outputData := map[string]interface{}{
-			"success": true,
-			"time":    utils.GetCurrentTime(),
+			"success":     true,
+			"time":        utils.GetCurrentTime(),
 			"duration_ms": processDuration.Milliseconds(),
 		}
 		outputBytes, _ := json.Marshal(outputData)
@@ -433,9 +434,9 @@ func (tm *TaskManager) processTaskItem(ctx context.Context, taskID uint, item *e
 			// 如果无法解析现有输出，保留原样并添加时间信息
 			outputData := map[string]interface{}{
 				"original_output": item.OutputData,
-				"success": true,
-				"time":    utils.GetCurrentTime(),
-				"duration_ms": processDuration.Milliseconds(),
+				"success":         true,
+				"time":            utils.GetCurrentTime(),
+				"duration_ms":     processDuration.Milliseconds(),
 			}
 			outputBytes, _ := json.Marshal(outputData)
 			outputJSON = string(outputBytes)
@@ -546,6 +547,7 @@ func (tm *TaskManager) RecoverRunningTasks() error {
 		// 创建上下文并恢复任务
 		ctx, cancel := context.WithCancel(context.Background())
 		tm.running[task.ID] = cancel
+		tm.recoveredTasks++
 
 		utils.Info("恢复任务 %d (类型: %s)", task.ID, task.Type)
 		go tm.processTask(ctx, task, processor)

@@ -1,5 +1,38 @@
 # 项目状态
 
+## 2026-08-15 P3 task operations measurement surface
+
+- Completed: added the administrator-only `GET /api/tasks/operations/status`
+  endpoint with a bounded 1–90 day window (default seven days).
+- Completed: the snapshot reports task volume by type/status, pending and
+  processing backlog, oldest backlog age, task duration aggregates, current
+  process-local concurrency, and restart-recovery count.
+- Boundary: this is aggregate telemetry only; it does not expose task payloads,
+  source/share URLs, credentials, authorization evidence, client IPs, or user
+  content, and it does not change task execution or retry behavior.
+- Verified: Go 1.24.5 container `go test -vet=off ./...`, `docker compose config --quiet`, and `git diff --check` pass.
+- Next: capture a seven-day snapshot after task traffic exists, then decide
+  whether the durable queue/worker migration gates are met before adding a
+  second backend replica.
+
+## 2026-08-15 P3 task execution migration evaluation
+
+- Completed: evaluated the conditional queue/worker follow-up against the actual
+  executor and the running local deployment. The current path is one process,
+  one goroutine per task, sequential task-item processing, PostgreSQL state, and
+  restart recovery for interrupted tasks.
+- Observed: the local single-backend Compose deployment currently has zero
+  `tasks` and zero `task_items` rows, so there is no backlog or latency evidence
+  requiring a queue/worker migration now.
+- Decision: defer the migration. The current process-local `running` map is not
+  safe for horizontal execution; a future multi-replica deployment must first
+  add durable task claiming/leases, stale-lease recovery, bounded concurrency,
+  graceful shutdown, and idempotent processor effects.
+- Documented: operating assumptions, measurement baseline, and migration gates
+  in `docs/task-operations.md`.
+- Next: collect task-volume and latency metrics once task traffic exists, then
+  revisit the migration decision before adding a second backend replica.
+
 ## 2026-08-15 Security increment
 
 - Completed: JWT signing key is now mandatory from `JWT_SECRET` (minimum 32 bytes); the embedded `your-secret-key` was removed. `JWT_PREVIOUS_SECRET` supports bounded verification-only key rotation.

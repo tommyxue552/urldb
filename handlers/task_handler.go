@@ -310,6 +310,24 @@ func (h *TaskHandler) GetTasks(c *gin.Context) {
 	})
 }
 
+// GetTaskOperationsStatus returns aggregate task execution telemetry for
+// administrators. It deliberately excludes task payloads and credentials.
+func (h *TaskHandler) GetTaskOperationsStatus(c *gin.Context) {
+	windowDays, err := strconv.Atoi(c.DefaultQuery("window_days", "7"))
+	if err != nil {
+		windowDays = 7
+	}
+
+	snapshot, err := h.taskManager.GetOperationsSnapshot(windowDays)
+	if err != nil {
+		utils.Error("获取任务运维指标失败: %v", err)
+		ErrorResponse(c, "获取任务运维指标失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	SuccessResponse(c, snapshot)
+}
+
 // GetTaskItems 获取任务项列表
 func (h *TaskHandler) GetTaskItems(c *gin.Context) {
 	taskIDStr := c.Param("id")

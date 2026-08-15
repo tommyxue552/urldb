@@ -1,5 +1,33 @@
 # 开发变更记录
 
+## 2026-08-15 (P3 task operations measurement surface)
+
+- Files: `task/operations.go`, `task/task_processor.go`, `db/repo/task_repository.go`, `handlers/task_handler.go`, `main.go`, `docs/task-operations.md`, `PROJECT_STATUS.md`, `TODO.md`
+- Added the administrator-only `GET /api/tasks/operations/status` aggregate
+  snapshot for the seven-day queue/worker migration baseline. It reports task
+  volume, status distribution, pending/processing backlog, oldest backlog age,
+  task duration aggregates, current process-local concurrency, and restart
+  recovery count.
+- Kept the response free of task payloads, URLs, credentials, authorization
+  evidence, client IPs, and user content. No task execution or retry behavior
+  changed.
+- Verification: Go 1.24.5 container `gofmt` and
+  `go test -vet=off ./...` passed; `docker compose config --quiet` and
+  `git diff --check` also passed.
+
+## 2026-08-15 (P3 task execution migration evaluation)
+
+- Files: `docs/task-operations.md`, `PROJECT_STATUS.md`, `TODO.md`, `CHANGELOG_DEV.md`
+- Evaluated the conditional migration from the process-local `TaskManager` path
+  to an explicit queue/worker using the current code and local Compose data.
+  The single-backend deployment has no task or task-item rows, so the migration
+  is deferred until workload or replica requirements justify it.
+- Documented the current single-process boundary, the horizontal-scaling risk,
+  the required baseline, and the durable-claim/lease requirements for a future
+  migration.
+- Verification: local PostgreSQL aggregate inspection completed; no source code
+  behavior was changed.
+
 ## 2026-08-15 (P3 provider contracts and compliance operations dashboard)
 
 - Files: `common/provider_contract_test.go`, `services/compliance_service.go`, `services/compliance_service_test.go`, `handlers/compliance_handler.go`, `main.go`, `web/composables/useApi.ts`, `web/pages/admin/compliance.vue`, `web/config/adminNewNavigation.ts`, `web/composables/useAdminNav.ts`, `web/components/Admin/NewSidebar.vue`, `docs/compliance-operations.md`, `PROJECT_STATUS.md`, `TODO.md`

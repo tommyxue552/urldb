@@ -10,6 +10,7 @@ import (
 
 // TaskRepository 任务仓库接口
 type TaskRepository interface {
+	GetDB() *gorm.DB
 	GetByID(id uint) (*entity.Task, error)
 	Create(task *entity.Task) error
 	Delete(id uint) error
@@ -26,6 +27,12 @@ type TaskRepository interface {
 // TaskRepositoryImpl 任务仓库实现
 type TaskRepositoryImpl struct {
 	db *gorm.DB
+}
+
+// GetDB returns the underlying database handle for read-only operational
+// aggregates. Task mutations remain encapsulated by the repository methods.
+func (r *TaskRepositoryImpl) GetDB() *gorm.DB {
+	return r.db
 }
 
 // NewTaskRepository 创建任务仓库
