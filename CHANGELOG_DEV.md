@@ -1,5 +1,12 @@
 # 开发变更记录
 
+## 2026-08-15（Phase 2，授权分享后台管理）
+
+- 文件：`services/authorized_share_service.go`、`handlers/authorized_share_handler.go`、`main.go`、`web/composables/useApi.ts`、`web/pages/admin/authorized-shares.vue`、`web/composables/useAdminNav.ts`、`web/components/Admin/NewSidebar.vue`、`web/config/adminNewNavigation.ts`、`PROJECT_STATUS.md`、`TODO.md`
+- 内容：增加管理员读取单个资源授权记录的 API，并新增“授权分享管理”后台页。该页按资源管理授权状态和证据引用，展示目标账号有效性与容量，创建或重试同平台授权转存任务，并查看、手动检测自有分享链接。新增入口沿用现有后台导航和 API 鉴权。
+- 合规与兼容性：界面仅供管理员操作，不展示原始资源 URL；创建任务仍由后端复核授权、保留期限、同平台约束和账号有效性，不绕过 provider 限制。
+- 验证：待执行前端类型检查和 Go 格式化/测试；本机仍无 Go 工具链。
+
 ## 2026-08-15（Phase 2，自有分享失效检测）
 
 - 文件：`db/entity/owned_share.go`、`services/authorized_share_service.go`、`handlers/authorized_share_handler.go`、`task/authorized_transfer_processor.go`、`main.go`、`PROJECT_STATUS.md`、`TODO.md`

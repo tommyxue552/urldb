@@ -162,6 +162,12 @@ const operationItems = ref([
     active: (route: any) => route.path.startsWith('/admin/data-transfer')
   },
   {
+    to: '/admin/authorized-shares',
+    label: '授权分享管理',
+    icon: 'fas fa-shield-alt',
+    active: (route: any) => route.path.startsWith('/admin/authorized-shares')
+  },
+  {
     to: '/admin/seo',
     label: 'SEO',
     icon: 'fas fa-search',
@@ -226,4 +232,4 @@ const systemItems = ref([
   font-family: 'Font Awesome 6 Free';
   font-weight: 900;
 }
-</style> 
+</style>

@@ -313,6 +313,17 @@ export const useTaskApi = () => {
   return { createBatchTransferTask, createExpansionTask, getExpansionAccounts, getTasks, getTaskStatus, startTask, stopTask, pauseTask, deleteTask, getTaskItems, getExpansionOutput }
 }
 
+// 管理员授权转存与自有分享链接 API。所有端点均受后端管理员权限保护。
+export const useAuthorizedShareApi = () => {
+  const getAuthorization = (resourceId: number) => useApiFetch(`/resources/${resourceId}/authorization`).then(parseApiResponse)
+  const saveAuthorization = (resourceId: number, data: any) => useApiFetch(`/resources/${resourceId}/authorization`, { method: 'PUT', body: data }).then(parseApiResponse)
+  const getOwnedShares = (resourceId: number, params?: any) => useApiFetch(`/resources/${resourceId}/owned-shares`, { params }).then(parseApiResponse)
+  const checkOwnedShares = (resourceId: number, ignoreCache = true) => useApiFetch(`/resources/${resourceId}/owned-shares/check`, { method: 'POST', params: { ignore_cache: ignoreCache } }).then(parseApiResponse)
+  const createTransferTask = (resourceId: number, data: any) => useApiFetch(`/resources/${resourceId}/owned-shares/tasks`, { method: 'POST', body: data }).then(parseApiResponse)
+  const retryTransferTask = (resourceId: number, taskId: number) => useApiFetch(`/resources/${resourceId}/owned-shares/tasks/${taskId}/retry`, { method: 'POST' }).then(parseApiResponse)
+  return { getAuthorization, saveAuthorization, getOwnedShares, checkOwnedShares, createTransferTask, retryTransferTask }
+}
+
 // 日志函数：只在开发环境打印
 function log(...args: any[]) {
   if (process.env.NODE_ENV !== 'production') {
@@ -466,6 +477,7 @@ export const useApi = () => {
     monitorApi: useMonitorApi(),
     userApi: useUserApi(),
     taskApi: useTaskApi(),
+		authorizedShareApi: useAuthorizedShareApi(),
     telegramApi: useTelegramApi(),
     meilisearchApi: useMeilisearchApi(),
     apiAccessLogApi: useApiAccessLogApi(),

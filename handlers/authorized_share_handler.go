@@ -41,6 +41,24 @@ func (h *AuthorizedShareHandler) UpsertAuthorization(c *gin.Context) {
 	SuccessResponse(c, gin.H{"resource_id": resourceID, "status": req.Status})
 }
 
+func (h *AuthorizedShareHandler) GetAuthorization(c *gin.Context) {
+	resourceID, err := parseResourceID(c)
+	if err != nil {
+		ErrorResponse(c, "invalid resource ID", http.StatusBadRequest)
+		return
+	}
+	authorization, err := h.service.GetAuthorization(resourceID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ErrorResponse(c, "resource not found", http.StatusNotFound)
+			return
+		}
+		ErrorResponse(c, "get authorization failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	SuccessResponse(c, gin.H{"authorization": authorization})
+}
+
 func (h *AuthorizedShareHandler) ListOwnedShares(c *gin.Context) {
 	resourceID, err := parseResourceID(c)
 	if err != nil { ErrorResponse(c, "invalid resource ID", http.StatusBadRequest); return }

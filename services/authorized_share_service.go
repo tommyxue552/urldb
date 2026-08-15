@@ -136,6 +136,24 @@ func (s *AuthorizedShareService) UpsertAuthorization(authorization *entity.Resou
 	})
 }
 
+// GetAuthorization returns the administrator-only authorization record for a
+// resource. A missing record is a valid result: it means transfer is not
+// permitted until an authorization record is registered.
+func (s *AuthorizedShareService) GetAuthorization(resourceID uint) (*entity.ResourceAuthorization, error) {
+	var resource entity.Resource
+	if err := s.db.First(&resource, resourceID).Error; err != nil {
+		return nil, err
+	}
+	var authorization entity.ResourceAuthorization
+	if err := s.db.Where("resource_id = ?", resourceID).First(&authorization).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &authorization, nil
+}
+
 func (s *AuthorizedShareService) ListActiveOwnedShares(resourceID, panID, ckID uint) ([]entity.OwnedShare, error) {
 	query := s.db.Where("resource_id = ? AND status = ?", resourceID, "active").
 		Where("expires_at IS NULL OR expires_at > ?", time.Now())

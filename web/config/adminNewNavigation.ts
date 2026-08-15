@@ -77,6 +77,14 @@ export const adminNewNavigationItems = [
     group: 'operation'
   },
   {
+    key: 'authorized-shares',
+    label: '授权分享管理',
+    icon: 'fas fa-shield-alt',
+    to: '/admin/authorized-shares',
+    active: (route: any) => route.path.startsWith('/admin/authorized-shares'),
+    group: 'operation'
+  },
+  {
     key: 'tasks',
     label: '任务管理',
     icon: 'fas fa-tasks',
@@ -195,4 +203,4 @@ export const adminNewMenuItems = [
     icon: 'fas fa-sign-out-alt',
     action: 'logout'
   }
-] 
+]

@@ -374,6 +374,7 @@ func main() {
 		// Owned-share records and transfer requests are administrative until the
 		// public detail-page flow is introduced in a later phase.
 		api.PUT("/resources/:id/authorization", middleware.AuthMiddleware(), middleware.AdminMiddleware(), authorizedShareHandler.UpsertAuthorization)
+		api.GET("/resources/:id/authorization", middleware.AuthMiddleware(), middleware.AdminMiddleware(), authorizedShareHandler.GetAuthorization)
 		api.GET("/resources/:id/owned-shares", middleware.AuthMiddleware(), middleware.AdminMiddleware(), authorizedShareHandler.ListOwnedShares)
 		api.POST("/resources/:id/owned-shares/check", middleware.AuthMiddleware(), middleware.AdminMiddleware(), authorizedShareHandler.CheckOwnedShares)
 		api.POST("/resources/:id/owned-shares/tasks", middleware.AuthMiddleware(), middleware.AdminMiddleware(), authorizedShareHandler.CreateTransferTask)

@@ -61,6 +61,7 @@ const systemConfigItems: NavItem[] = [
 
 const operationItems: NavItem[] = [
   { to: '/admin/data-transfer', label: '数据转存管理', icon: 'fas fa-exchange-alt', active: (r) => r.path.startsWith('/admin/data-transfer') },
+  { to: '/admin/authorized-shares', label: '授权分享管理', icon: 'fas fa-shield-alt', active: (r) => r.path.startsWith('/admin/authorized-shares') },
   { to: '/admin/data-push', label: '数据推送', icon: 'fas fa-upload', active: (r) => r.path.startsWith('/admin/data-push') },
   { to: '/admin/bot', label: '机器人', icon: 'fas fa-robot', active: (r) => r.path.startsWith('/admin/bot') },
   { to: '/admin/seo', label: 'SEO', icon: 'fas fa-search', active: (r) => r.path.startsWith('/admin/seo') },
