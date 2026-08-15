@@ -517,6 +517,7 @@
       :url="selectedResource?.url"
       :save_url="selectedResource?.save_url"
       :loading="selectedResource?.loading"
+      :pending="selectedResource?.pending"
       :linkType="selectedResource?.linkType"
       :platform="selectedResource?.platform"
       :message="selectedResource?.message"
@@ -605,6 +606,7 @@ const showReportModal = ref(false)
 const showCopyrightModal = ref(false)
 const selectedResource = ref<any>(null)
 const loadingStates = ref<Record<number, boolean>>({})
+const taskPollers = new Map<number, ReturnType<typeof setInterval>>()
 const isDetecting = ref(false)
 const detectionResults = ref<Record<number, boolean>>({})
 const detectionErrors = ref<Record<number, string>>({})
@@ -1016,10 +1018,26 @@ const toggleLink = async (resource: any) => {
   try {
     const linkData = await resourceApi.getResourceLink(resource.id) as any
 
+    if (linkData.type === 'task') {
+      selectedResource.value = {
+        ...resource,
+        loading: false,
+        pending: true,
+        message: linkData.message || `转存任务 ${linkData.task_status || '处理中'}，将自动刷新`,
+        taskId: linkData.task_id
+      }
+      startTaskPolling(resource, Number(linkData.poll_after_seconds || 3))
+      return
+    }
+    if (linkData.type === 'unavailable') {
+      selectedResource.value = { ...resource, loading: false, error: linkData.message || '暂无可用的自有分享链接' }
+      return
+    }
+
     selectedResource.value = {
       ...resource,
       url: linkData.url,
-      save_url: linkData.type === 'transferred' ? linkData.url : resource.save_url,
+      save_url: linkData.url,
       loading: false,
       linkType: linkData.type,
       platform: linkData.platform,
@@ -1036,6 +1054,34 @@ const toggleLink = async (resource: any) => {
     loadingStates.value[resource.id] = false
   }
 }
+
+const startTaskPolling = (resource: any, intervalSeconds: number) => {
+  const existing = taskPollers.get(resource.id)
+  if (existing) clearInterval(existing)
+  const poller = setInterval(async () => {
+    try {
+      const linkData = await resourceApi.getResourceLink(resource.id) as any
+      if (linkData.type === 'owned_share') {
+        clearInterval(poller)
+        taskPollers.delete(resource.id)
+        selectedResource.value = { ...resource, url: linkData.url, save_url: linkData.url, loading: false, pending: false, linkType: linkData.type, platform: linkData.platform, message: '自有分享链接已就绪' }
+      } else if (linkData.type === 'unavailable' || linkData.task_status === 'failed') {
+        clearInterval(poller)
+        taskPollers.delete(resource.id)
+        selectedResource.value = { ...resource, loading: false, pending: false, error: linkData.message || '转存任务未能生成可用链接' }
+      } else if (selectedResource.value?.id === resource.id) {
+        selectedResource.value = { ...selectedResource.value, message: linkData.message || `转存任务 ${linkData.task_status || '处理中'}，将自动刷新` }
+      }
+    } catch {
+      clearInterval(poller)
+      taskPollers.delete(resource.id)
+      if (selectedResource.value?.id === resource.id) selectedResource.value = { ...selectedResource.value, pending: false, error: '获取任务状态失败，请稍后重试' }
+    }
+  }, Math.max(1, intervalSeconds) * 1000)
+  taskPollers.set(resource.id, poller)
+}
+
+onBeforeUnmount(() => taskPollers.forEach((poller) => clearInterval(poller)))
 
 // 复制到剪贴板
 const copyToClipboard = async (text: string) => {

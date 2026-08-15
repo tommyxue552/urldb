@@ -1,12 +1,15 @@
 package handlers
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/ctwj/urldb/db"
 	"github.com/ctwj/urldb/db/converter"
 	"github.com/ctwj/urldb/db/dto"
 	"github.com/ctwj/urldb/db/entity"
@@ -299,6 +302,10 @@ func GetResourcesByKey(c *gin.Context) {
 	var responses []dto.ResourceResponse
 	for _, resource := range resources {
 		response := converter.ToResourceResponse(&resource)
+		// Public detail pages identify a resource by metadata only. Distribution
+		// must go through GetResourceLink, which returns an authorized owned share.
+		response.URL = ""
+		response.SaveURL = ""
 		// 检查违禁词
 		forbiddenInfo := utils.CheckResourceForbiddenWords(response.Title, response.Description, cleanWords)
 		response.HasForbiddenWords = forbiddenInfo.HasForbiddenWords
@@ -752,7 +759,7 @@ func GetResourceLink(c *gin.Context) {
 		}
 	}
 
-	utils.Info("资源信息 - 平台: %s, 原始链接: %s, 转存链接: %s", panInfo.Name, resource.URL, resource.SaveURL)
+	utils.Info("资源取链请求 - resourceID: %d, platform: %s", resource.ID, panInfo.Name)
 
 	// 统计访问次数
 	err = repoManager.ResourceRepository.IncrementViewCount(uint(resourceID))
@@ -768,80 +775,44 @@ func GetResourceLink(c *gin.Context) {
 		utils.Error("记录资源访问失败: %v", err)
 	}
 
-	// 仅夸克/迅雷/百度支持详情页自动转存；其他平台直接返回原链接
-	if panInfo.Name != "quark" && panInfo.Name != "xunlei" && panInfo.Name != "baidu" {
-		utils.Info("该平台不支持详情页自动转存，直接返回原链接: %s", panInfo.Name)
-		SuccessResponse(c, gin.H{
-			"url":         resource.URL,
-			"type":        "original",
-			"platform":    panInfo.Remark,
-			"resource_id": resource.ID,
-		})
+	// Public resource pages may only return service-controlled, active shares.
+	// The original source URL and legacy save_url never leave this endpoint.
+	if resource.PanID == nil {
+		SuccessResponse(c, gin.H{"type": "unavailable", "resource_id": resource.ID, "message": "该资源尚未配置可分发的平台"})
+		return
+	}
+	var share entity.OwnedShare
+	err = db.DB.Where("resource_id = ? AND pan_id = ? AND status = ?", resource.ID, *resource.PanID, "active").
+		Where("expires_at IS NULL OR expires_at > ?", time.Now()).Order("updated_at DESC").First(&share).Error
+	if err == nil {
+		SuccessResponse(c, gin.H{"url": share.URL, "type": "owned_share", "platform": panInfo.Remark, "resource_id": resource.ID})
+		return
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		utils.Error("查询自有分享链接失败: %v", err)
+		ErrorResponse(c, "查询可用分享链接失败", http.StatusInternalServerError)
 		return
 	}
 
-	// 如果已存在转存链接，直接返回
-	if resource.SaveURL != "" {
-		utils.Info("已存在转存链接，直接返回: %s", resource.SaveURL)
-		SuccessResponse(c, gin.H{
-			"url":         resource.SaveURL,
-			"type":        "transferred",
-			"platform":    panInfo.Remark,
-			"resource_id": resource.ID,
-		})
+	// An administrator-created task can be safely observed by its resource page.
+	// Only status/message are disclosed; task config and original URLs remain private.
+	var tasks []entity.Task
+	if err := db.DB.Where("type = ?", entity.TaskTypeAuthorizedTransfer).Order("updated_at DESC").Limit(100).Find(&tasks).Error; err != nil {
+		ErrorResponse(c, "查询转存任务失败", http.StatusInternalServerError)
 		return
 	}
-
-	// 检查是否开启自动转存
-	autoTransferEnabled, err := repoManager.SystemConfigRepository.GetConfigBool(entity.ConfigKeyAutoTransferEnabled)
-	if err != nil {
-		utils.Error("获取自动转存配置失败: %v", err)
-		// 配置获取失败，返回原链接
-		SuccessResponse(c, gin.H{
-			"url":         resource.URL,
-			"type":        "original",
-			"platform":    panInfo.Remark,
-			"resource_id": resource.ID,
-			"message":     "",
-		})
-		return
+	for _, task := range tasks {
+		var input services.AuthorizedTransferRequest
+		if json.Unmarshal([]byte(task.Config), &input) == nil && input.ResourceID == resource.ID && input.PanID == *resource.PanID {
+			if task.Status == entity.TaskStatusFailed || task.Status == entity.TaskStatusCompleted || task.Status == entity.TaskStatusCancelled {
+				SuccessResponse(c, gin.H{"type": "unavailable", "resource_id": resource.ID, "message": "该转存任务未生成可用分享链接"})
+				return
+			}
+			SuccessResponse(c, gin.H{"type": "task", "resource_id": resource.ID, "task_id": task.ID, "task_status": task.Status, "message": task.Message, "poll_after_seconds": 3})
+			return
+		}
 	}
-
-	if !autoTransferEnabled {
-		utils.Info("自动转存功能未开启，返回原链接")
-		SuccessResponse(c, gin.H{
-			"url":         resource.URL,
-			"type":        "original",
-			"platform":    panInfo.Remark,
-			"resource_id": resource.ID,
-			"message":     "",
-		})
-		return
-	}
-
-	// 执行自动转存
-	utils.Info("开始执行自动转存")
-	transferResult := services.PerformAutoTransfer(repoManager.CksRepository, repoManager.SystemConfigRepository, repoManager.ResourceRepository, resource)
-
-	if transferResult.Success {
-		utils.Info("自动转存成功，返回转存链接: %s", transferResult.SaveURL)
-		SuccessResponse(c, gin.H{
-			"url":         transferResult.SaveURL,
-			"type":        "transferred",
-			"platform":    panInfo.Remark,
-			"resource_id": resource.ID,
-			"message":     "资源易和谐，请及时用手机夸克扫码转存",
-		})
-	} else {
-		utils.Error("自动转存失败: %s", transferResult.ErrorMsg)
-		SuccessResponse(c, gin.H{
-			"url":         resource.URL,
-			"type":        "original",
-			"platform":    panInfo.Remark,
-			"resource_id": resource.ID,
-			"message":     "",
-		})
-	}
+	SuccessResponse(c, gin.H{"type": "unavailable", "resource_id": resource.ID, "message": "暂无可用的自有分享链接，请稍后再试"})
 }
 
 // GetHotResources 获取热门资源

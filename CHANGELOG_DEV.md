@@ -1,5 +1,25 @@
 # 开发变更记录
 
+## 2026-08-15（Phase 2，公开访问统计与速率限制）
+
+- 文件：`middleware/rate_limit.go`、`middleware/rate_limit_test.go`、`main.go`、`PROJECT_STATUS.md`、`TODO.md`、`CHANGELOG_DEV.md`
+- 内容：复核现有搜索、点击和网页/公众号/Telegram 渠道归因链路；为资源搜索、详情、点击、取链和搜索统计上报增加按客户端 IP 与端点作用域隔离的进程内固定窗口限速（详情/搜索 60 次/分钟，点击/取链 20 次/分钟，统计上报 30 次/分钟）。触发时返回 HTTP 429、统一响应体和 `Retry-After`。
+- 验证：官方 Go 1.24.5 容器内 `gofmt`、`go test -vet=off ./middleware ./task ./services ./handlers` 与 `go vet ./middleware` 均通过；新增中间件测试覆盖超限与 `Retry-After`。
+- 运维说明：限速为单进程内存状态；多副本部署需在网关统一限速或替换为共享存储实现。
+
+## 2026-08-15（Phase 2，工具链验证）
+
+- 文件：`handlers/resource_handler.go`、`PROJECT_STATUS.md`、`CHANGELOG_DEV.md`
+- 内容：使用官方 `golang:1.24.5-alpine` 容器对详情页安全跳转改动执行 `gofmt`，并通过 `go test -vet=off ./task ./services ./handlers`（三个包均通过）；`docker compose config --quiet` 与 `git diff --check` 也通过。
+- 已知限制：宿主机与运行时后端镜像均不包含 Go。默认 `go test` 会在 Go 1.24 vet 阶段被既有的 Meilisearch/Telegram 动态日志格式串告警阻塞，该问题不属于本次详情页改动，后续应专项整改。
+
+## 2026-08-15（Phase 2，详情页安全跳转）
+
+- 文件：`handlers/resource_handler.go`、`web/pages/r/[key].vue`、`web/components/QrCodeModal.vue`、`PROJECT_STATUS.md`、`TODO.md`
+- 内容：详情页数据和取链接口改为不返回原始资源 URL 或旧 `save_url`；取链接口只返回同平台、未过期的活跃 `owned_shares`。当管理员已创建授权转存任务但链接尚未就绪时，接口只返回无敏感数据的任务状态，详情页按建议间隔轮询，成功后才展示并跳转自有分享链接。
+- 合规与兼容性：保留原有路由和浏览统计；未创建合规自有分享链接的资源明确显示不可用，不触发自动转存、不暴露来源链接。
+- 验证：待执行 Go 格式化/测试与前端类型检查；本机 Go 工具链和完整前端依赖链接仍不可用。
+
 ## 2026-08-15（Phase 2，授权分享后台管理）
 
 - 文件：`services/authorized_share_service.go`、`handlers/authorized_share_handler.go`、`main.go`、`web/composables/useApi.ts`、`web/pages/admin/authorized-shares.vue`、`web/composables/useAdminNav.ts`、`web/components/Admin/NewSidebar.vue`、`web/config/adminNewNavigation.ts`、`PROJECT_STATUS.md`、`TODO.md`

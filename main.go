@@ -359,17 +359,20 @@ func main() {
 		api.GET("/auth/profile", middleware.AuthMiddleware(), handlers.GetProfile)
 
 		// 资源管理
-		api.GET("/resources", handlers.GetResources)
+		// Public discovery and distribution endpoints are rate-limited per client
+		// IP. The limits are intentionally separate so search traffic cannot
+		// exhaust the budget for an already-authorized owned-share link.
+		api.GET("/resources", middleware.RateLimitByIP("resource-search", 60, time.Minute), handlers.GetResources)
 		api.GET("/resources/hot", handlers.GetHotResources)
 		api.POST("/resources", middleware.AuthMiddleware(), middleware.AdminMiddleware(), handlers.CreateResource)
 		api.PUT("/resources/:id", middleware.AuthMiddleware(), middleware.AdminMiddleware(), handlers.UpdateResource)
 		api.DELETE("/resources/:id", middleware.AuthMiddleware(), middleware.AdminMiddleware(), handlers.DeleteResource)
 		api.GET("/resources/:id", handlers.GetResourceByID)
-		api.GET("/resources/key/:key", handlers.GetResourcesByKey)
+		api.GET("/resources/key/:key", middleware.RateLimitByIP("resource-detail", 60, time.Minute), handlers.GetResourcesByKey)
 		api.GET("/resources/check-exists", handlers.CheckResourceExists)
 		api.GET("/resources/related", handlers.GetRelatedResources)
-		api.POST("/resources/:id/view", handlers.IncrementResourceViewCount)
-		api.GET("/resources/:id/link", handlers.GetResourceLink)
+		api.POST("/resources/:id/view", middleware.RateLimitByIP("resource-view", 20, time.Minute), handlers.IncrementResourceViewCount)
+		api.GET("/resources/:id/link", middleware.RateLimitByIP("resource-link", 20, time.Minute), handlers.GetResourceLink)
 		api.GET("/resources/:id/validity", handlers.CheckResourceValidity)
 		// Owned-share records and transfer requests are administrative until the
 		// public detail-page flow is introduced in a later phase.
@@ -452,8 +455,8 @@ func main() {
 		api.GET("/search-stats/daily", handlers.GetDailyStats)
 		api.GET("/search-stats/trend", handlers.GetSearchTrend)
 		api.GET("/search-stats/keyword/:keyword/trend", handlers.GetKeywordTrend)
-		api.POST("/search-stats", handlers.RecordSearch)
-		api.POST("/search-stats/record", handlers.RecordSearch)
+		api.POST("/search-stats", middleware.RateLimitByIP("search-stat", 30, time.Minute), handlers.RecordSearch)
+		api.POST("/search-stats/record", middleware.RateLimitByIP("search-stat", 30, time.Minute), handlers.RecordSearch)
 		api.GET("/search-stats/summary", handlers.GetSearchStatsSummary)
 		api.GET("/search-stats/source-distribution", handlers.GetSearchSourceDistribution)
 

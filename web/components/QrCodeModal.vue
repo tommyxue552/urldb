@@ -2,7 +2,13 @@
   <n-modal :show="visible" @update:show="closeModal" preset="card" title="链接二维码" class="max-w-sm">
     <div class="text-center">
       <!-- 加载状态 -->
-      <div v-if="loading" class="space-y-4">
+      <div v-if="pending" class="space-y-4">
+        <div class="flex flex-col items-center justify-center py-8">
+          <n-spin size="large" />
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-4">{{ message || '正在处理授权转存任务…' }}</p>
+        </div>
+      </div>
+      <div v-else-if="loading" class="space-y-4">
         <div class="flex flex-col items-center justify-center py-8">
           <n-spin size="large" />
           <p class="text-sm text-gray-600 dark:text-gray-400 mt-4">正在获取链接...</p>
@@ -172,6 +178,7 @@ interface Props {
   save_url?: string
   url?: string
   loading?: boolean
+  pending?: boolean
   linkType?: string
   platform?: string
   message?: string
@@ -305,4 +312,4 @@ watch(() => props.visible, (newVisible) => {
 .n-qr-code {
   padding: 0 !important;
 }
-</style> 
+</style>
