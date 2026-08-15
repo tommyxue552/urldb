@@ -85,6 +85,14 @@ export const adminNewNavigationItems = [
     group: 'operation'
   },
   {
+    key: 'compliance',
+    label: '合规运营看板',
+    icon: 'fas fa-shield-halved',
+    to: '/admin/compliance',
+    active: (route: any) => route.path.startsWith('/admin/compliance'),
+    group: 'operation'
+  },
+  {
     key: 'tasks',
     label: '任务管理',
     icon: 'fas fa-tasks',

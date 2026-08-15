@@ -319,6 +319,10 @@ func main() {
 	// 创建Meilisearch处理器
 	meilisearchHandler := handlers.NewMeilisearchHandler(meilisearchManager)
 
+	// 创建合规审计与运营看板处理器
+	complianceDashboardService := services.NewComplianceDashboardService(db.DB)
+	complianceHandler := handlers.NewComplianceHandler(complianceDashboardService)
+
 	// 创建OG图片处理器
 	ogImageHandler := handlers.NewOGImageHandler()
 
@@ -526,6 +530,9 @@ func main() {
 		api.POST("/meilisearch/clear-index", middleware.AuthMiddleware(), middleware.AdminMiddleware(), meilisearchHandler.ClearIndex)
 		api.POST("/meilisearch/test-connection", middleware.AuthMiddleware(), middleware.AdminMiddleware(), meilisearchHandler.TestConnection)
 		api.POST("/meilisearch/update-settings", middleware.AuthMiddleware(), middleware.AdminMiddleware(), meilisearchHandler.UpdateIndexSettings)
+
+		// Provider 合规审计与授权转存运营看板
+		api.GET("/compliance/dashboard", middleware.AuthMiddleware(), middleware.AdminMiddleware(), complianceHandler.GetDashboard)
 
 		// 文件上传相关路由
 		api.POST("/files/upload", middleware.AuthMiddleware(), fileHandler.UploadFile)

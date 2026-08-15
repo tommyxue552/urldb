@@ -397,6 +397,12 @@ export const useMeilisearchApi = () => {
   }
 }
 
+// Provider 合规审计与授权转存运营看板 API
+export const useComplianceApi = () => {
+  const getDashboard = () => useApiFetch('/compliance/dashboard').then(parseApiResponse)
+  return { getDashboard }
+}
+
 // API访问日志管理API
 export const useApiAccessLogApi = () => {
   const getApiAccessLogs = (params?: any) => useApiFetch('/api/api-access-logs', { params }).then(parseApiResponse)
@@ -480,6 +486,7 @@ export const useApi = () => {
 		authorizedShareApi: useAuthorizedShareApi(),
     telegramApi: useTelegramApi(),
     meilisearchApi: useMeilisearchApi(),
+    complianceApi: useComplianceApi(),
     apiAccessLogApi: useApiAccessLogApi(),
     systemLogApi: useSystemLogApi(),
     wechatApi: useWechatApi(),

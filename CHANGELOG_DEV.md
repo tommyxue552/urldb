@@ -1,5 +1,12 @@
 # 开发变更记录
 
+## 2026-08-15 (P3 provider contracts and compliance operations dashboard)
+
+- Files: `common/provider_contract_test.go`, `services/compliance_service.go`, `services/compliance_service_test.go`, `handlers/compliance_handler.go`, `main.go`, `web/composables/useApi.ts`, `web/pages/admin/compliance.vue`, `web/config/adminNewNavigation.ts`, `web/composables/useAdminNav.ts`, `web/components/Admin/NewSidebar.vue`, `docs/compliance-operations.md`, `PROJECT_STATUS.md`, `TODO.md`
+- Added no-network provider contract coverage for the registered provider factory entries and explicit tests that unimplemented provider types remain unavailable.
+- Added an administrator-only compliance dashboard endpoint and page with aggregate authorization/share/task expiry and failure metrics, plus provider implementation and deployment-approval status. The response intentionally excludes URLs, authorization evidence contents, credentials, and client data.
+- Verification: `gofmt`, `go test -vet=off ./common ./services ./handlers`, and `git diff --check` passed. Frontend build/type checks remain limited by the existing pnpm ignored-build policy and pre-existing workspace type errors.
+
 ## 2026-08-15 (P2 Meilisearch operations and fallback monitoring)
 
 - Files: `docker-compose.yml`, `env.example`, `services/meilisearch_manager.go`, `handlers/public_api_handler.go`, `handlers/resource_handler.go`, `PROJECT_STATUS.md`, `TODO.md`

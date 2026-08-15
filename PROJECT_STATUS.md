@@ -22,6 +22,14 @@
 - Completed: the administrator status API now reports unsynced resources and in-process fallback counters/reason/timestamp. Public and administrator search calls record a fallback only when an enabled Meilisearch service is unavailable or returns an error; PostgreSQL remains the compatible fallback.
 - Next: add provider contract tests and a compliance audit/operations dashboard (P3).
 
+## 2026-08-15 P3 provider contracts and compliance operations dashboard
+
+- Completed: added no-network provider contract tests covering all currently registered provider implementations and explicit failures for provider types that remain unimplemented.
+- Completed: added the administrator-only `/api/compliance/dashboard` report and `/admin/compliance` operations page. It aggregates authorization, owned-share, and authorized-transfer task states, seven-day expiry windows, and the provider implementation/approval matrix without exposing source links, share links, evidence contents, or credentials.
+- Completed: documented the report contract and operational boundaries in `docs/compliance-operations.md`.
+- Verified: `gofmt`, `go test -vet=off ./common ./services ./handlers`, and `git diff --check` passed. Frontend dependency preparation/build remains blocked by the workspace's existing pnpm ignored-build policy and pre-existing TypeScript errors; no new error references the compliance page or API.
+- Next: evaluate the P3 follow-up on migrating the in-process task path to an explicit queue/worker only if current task volume requires it.
+
 - 已完成：获取 urlDB v1.5.0 源码快照；完成代码/部署梳理；Docker Desktop 已启动；官方 Compose 已成功运行，首页、登录页、版本 API 和管理员登录已验证；已建立二开文档。
 - 正在开发：P0 安全与合规基础设施。
 - 下一步：落实 JWT 密钥环境变量化，并设计 Cookie/Token 的加密、轮换和审计方案。

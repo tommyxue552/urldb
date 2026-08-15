@@ -162,6 +162,12 @@ const operationItems = ref([
     active: (route: any) => route.path.startsWith('/admin/data-transfer')
   },
   {
+    to: '/admin/compliance',
+    label: '合规运营看板',
+    icon: 'fas fa-shield-alt',
+    active: (route: any) => route.path.startsWith('/admin/compliance')
+  },
+  {
     to: '/admin/authorized-shares',
     label: '授权分享管理',
     icon: 'fas fa-shield-alt',
