@@ -83,6 +83,10 @@ func (p *AuthorizedTransferProcessor) Process(ctx context.Context, taskID uint, 
 	if shareID == "" || serviceType == pan.NotFound {
 		return errors.New("resource URL is not a supported provider share link")
 	}
+	providerPolicy, err := pan.AuthorizedTransferProviderPolicyFor(serviceType)
+	if err != nil {
+		return fmt.Errorf("authorized transfer is blocked by provider compliance policy: %w", err)
+	}
 	service, err := pan.NewPanFactory().CreatePanService(resource.URL, &pan.PanConfig{URL: resource.URL, Cookie: account.Ck})
 	if err != nil {
 		return fmt.Errorf("create provider service: %w", err)
@@ -100,12 +104,16 @@ func (p *AuthorizedTransferProcessor) Process(ctx context.Context, taskID uint, 
 		return fmt.Errorf("provider transfer failed: %s", message)
 	}
 
-	owned := entity.OwnedShare{ResourceID: input.ResourceID, PanID: input.PanID, CkID: input.CkID, URL: result.ShareURL, Fid: result.Fid, Status: "active", Channel: input.Channel}
+	providerExpiry := time.Now().AddDate(0, 0, providerPolicy.MaxShareRetentionInDays)
+	if authorization.RetentionUntil != nil && authorization.RetentionUntil.Before(providerExpiry) {
+		providerExpiry = *authorization.RetentionUntil
+	}
+	owned := entity.OwnedShare{ResourceID: input.ResourceID, PanID: input.PanID, CkID: input.CkID, URL: result.ShareURL, Fid: result.Fid, Status: "active", Channel: input.Channel, ExpiresAt: &providerExpiry}
 	if owned.Channel == "" {
 		owned.Channel = "system"
 	}
 	if err := p.db.Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "resource_id"}, {Name: "pan_id"}, {Name: "ck_id"}},
+		Columns:   []clause.Column{{Name: "resource_id"}, {Name: "pan_id"}, {Name: "ck_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"url", "fid", "status", "channel", "expires_at", "last_checked_at", "last_check_status", "last_check_method", "last_check_fail_reason", "deleted_at", "updated_at"}),
 	}).Create(&owned).Error; err != nil {
 		return fmt.Errorf("persist owned share: %w", err)

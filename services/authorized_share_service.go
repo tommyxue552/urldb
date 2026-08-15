@@ -7,15 +7,17 @@ import (
 	"fmt"
 	"time"
 
+	pan "github.com/ctwj/urldb/common"
 	"github.com/ctwj/urldb/db/entity"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 var (
-	ErrAuthorizationRequired = errors.New("resource has no active authorization")
-	ErrTargetAccountMismatch = errors.New("target account does not belong to target platform")
-	ErrTransferTaskNotRetryable = errors.New("authorized transfer task is not retryable")
+	ErrAuthorizationRequired       = errors.New("resource has no active authorization")
+	ErrTargetAccountMismatch       = errors.New("target account does not belong to target platform")
+	ErrTransferTaskNotRetryable    = errors.New("authorized transfer task is not retryable")
+	ErrTransferProviderNotApproved = errors.New("target provider is not approved for authorized transfer")
 )
 
 // AuthorizedShareService owns the authorization, owned-share, and transfer
@@ -45,16 +47,24 @@ func (s *AuthorizedShareService) RetryAuthorizedTransferTask(resourceID, taskID 
 			"status": "pending", "message": "Retry queued by administrator", "processed_items": 0,
 			"success_items": 0, "failed_items": 0, "progress": 0, "started_at": nil, "completed_at": nil,
 		})
-		if result.Error != nil { return result.Error }
+		if result.Error != nil {
+			return result.Error
+		}
 		result = tx.Model(&entity.TaskItem{}).Where("task_id = ? AND status = ?", task.ID, entity.TaskItemStatusFailed).Updates(map[string]interface{}{
 			"status": "pending", "output_data": "", "error_message": "", "processed_at": nil,
 		})
-		if result.Error != nil { return result.Error }
-		if result.RowsAffected != 1 { return ErrTransferTaskNotRetryable }
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrTransferTaskNotRetryable
+		}
 		task.Status = entity.TaskStatusPending
 		return nil
 	})
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return &task, nil
 }
 
@@ -88,9 +98,9 @@ func (s *AuthorizedShareService) CheckOwnedShares(ctx context.Context, resourceI
 		share := &shares[index]
 		result := results[share.URL]
 		updates := map[string]interface{}{
-			"last_checked_at":         now,
-			"last_check_status":       result.Status,
-			"last_check_method":       result.DetectionMethod,
+			"last_checked_at":        now,
+			"last_check_status":      result.Status,
+			"last_check_method":      result.DetectionMethod,
 			"last_check_fail_reason": result.FailReason,
 		}
 		if result.Status == "invalid" {
@@ -168,9 +178,9 @@ func (s *AuthorizedShareService) ListActiveOwnedShares(resourceID, panID, ckID u
 }
 
 type AuthorizedTransferRequest struct {
-	ResourceID uint `json:"resource_id"`
-	PanID      uint `json:"pan_id"`
-	CkID       uint `json:"ck_id"`
+	ResourceID uint   `json:"resource_id"`
+	PanID      uint   `json:"pan_id"`
+	CkID       uint   `json:"ck_id"`
 	Channel    string `json:"channel"`
 }
 
@@ -191,6 +201,12 @@ func (s *AuthorizedShareService) CreateAuthorizedTransferTask(req AuthorizedTran
 		var resource entity.Resource
 		if err := tx.First(&resource, req.ResourceID).Error; err != nil {
 			return err
+		}
+		if resource.PanID == nil || *resource.PanID != req.PanID {
+			return ErrTargetAccountMismatch
+		}
+		if _, err := pan.AuthorizedTransferProviderPolicyFor(pan.ExtractServiceType(resource.URL)); err != nil {
+			return fmt.Errorf("%w: %v", ErrTransferProviderNotApproved, err)
 		}
 
 		var authorization entity.ResourceAuthorization

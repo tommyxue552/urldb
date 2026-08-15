@@ -1,5 +1,12 @@
 # 开发变更记录
 
+## 2026-08-15（P0，Provider 合规闸门）
+
+- 文件：`common/authorized_transfer_policy.go`、`common/authorized_transfer_policy_test.go`、`services/authorized_share_service.go`、`task/authorized_transfer_processor.go`、`env.example`、`docs/provider-capability-matrix.md`、`PROJECT_STATUS.md`、`TODO.md`
+- 内容：建立默认拒绝的授权转存 provider 审批策略。provider 必须同时位于部署批准清单、提供官方 API 或书面获准集成的证据引用，并声明正向最大分享保留天数，才能创建或执行授权转存任务；任务创建和执行均复核，避免过往队列任务绕过政策变化。
+- 合规：能力矩阵记录本轮可验证的百度网盘/PCS OAuth 公开资料以及所有现有实现的未获准状态。当前代码未走百度 OAuth，其他实现也未保留官方/获准接口证据，故不默认启用任何 provider；资源级授权及其保留期仍为必需条件。
+- 验证：已用 Go 1.24.5 容器执行 `gofmt` 与 `go test -vet=off ./common ./task ./services`，均通过；`git diff --check` 通过。
+
 ## 2026-08-15（Phase 2，公开访问统计与速率限制）
 
 - 文件：`middleware/rate_limit.go`、`middleware/rate_limit_test.go`、`main.go`、`PROJECT_STATUS.md`、`TODO.md`、`CHANGELOG_DEV.md`
