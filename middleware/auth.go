@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -13,7 +15,40 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var jwtSecret = []byte("your-secret-key")
+const (
+	jwtSecretEnv         = "JWT_SECRET"
+	jwtPreviousSecretEnv = "JWT_PREVIOUS_SECRET"
+	minimumJWTSecretSize = 32
+)
+
+// ValidateJWTConfiguration prevents startup with a repository-supplied or weak
+// signing key. The key is intentionally never stored in the database.
+func ValidateJWTConfiguration() error {
+	if len([]byte(os.Getenv(jwtSecretEnv))) < minimumJWTSecretSize {
+		return fmt.Errorf("%s must be set to at least %d random bytes", jwtSecretEnv, minimumJWTSecretSize)
+	}
+	return nil
+}
+
+func jwtSigningSecret() ([]byte, error) {
+	secret := []byte(os.Getenv(jwtSecretEnv))
+	if len(secret) < minimumJWTSecretSize {
+		return nil, fmt.Errorf("%s is not configured", jwtSecretEnv)
+	}
+	return secret, nil
+}
+
+func jwtVerificationSecrets() ([][]byte, error) {
+	current, err := jwtSigningSecret()
+	if err != nil {
+		return nil, err
+	}
+	secrets := [][]byte{current}
+	if previous := []byte(os.Getenv(jwtPreviousSecretEnv)); len(previous) >= minimumJWTSecretSize {
+		secrets = append(secrets, previous)
+	}
+	return secrets, nil
+}
 
 // Claims JWT声明
 type Claims struct {
@@ -110,16 +145,36 @@ func GenerateToken(user *entity.User) (string, error) {
 		},
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(jwtSecret)
+	secret, err := jwtSigningSecret()
+	if err != nil {
+		return "", err
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(secret)
 }
 
 // parseToken 解析JWT令牌
 func parseToken(tokenString string) (*Claims, error) {
+	secrets, err := jwtVerificationSecrets()
+	if err != nil {
+		return nil, err
+	}
+	for _, secret := range secrets {
+		claims, err := parseTokenWithSecret(tokenString, secret)
+		if err == nil {
+			return claims, nil
+		}
+	}
+	return nil, jwt.ErrSignatureInvalid
+}
+
+func parseTokenWithSecret(tokenString string, secret []byte) (*Claims, error) {
 	// utils.Info("parseToken - 开始解析令牌")
 
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		return jwtSecret, nil
+		if token.Method != jwt.SigningMethodHS256 {
+			return nil, fmt.Errorf("unexpected JWT signing method %q", token.Header["alg"])
+		}
+		return secret, nil
 	})
 
 	if err != nil {

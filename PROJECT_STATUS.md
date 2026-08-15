@@ -1,5 +1,12 @@
 # 项目状态
 
+## 2026-08-15 Security increment
+
+- Completed: JWT signing key is now mandatory from `JWT_SECRET` (minimum 32 bytes); the embedded `your-secret-key` was removed. `JWT_PREVIOUS_SECRET` supports bounded verification-only key rotation.
+- Completed: documented the envelope-encryption, provider credential rotation, and append-only audit requirements in `docs/credential-security.md`.
+- Verified: `gofmt` and `go test -vet=off ./middleware` passed in the official `golang:1.24.5-alpine` container; `git diff --check` passed.
+- Next: implement the documented credential repository encryption, HMAC lookup fingerprint, and audit table before allowing production credential ingestion.
+
 - 已完成：获取 urlDB v1.5.0 源码快照；完成代码/部署梳理；Docker Desktop 已启动；官方 Compose 已成功运行，首页、登录页、版本 API 和管理员登录已验证；已建立二开文档。
 - 正在开发：P0 安全与合规基础设施。
 - 下一步：落实 JWT 密钥环境变量化，并设计 Cookie/Token 的加密、轮换和审计方案。

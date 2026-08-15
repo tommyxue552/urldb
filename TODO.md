@@ -1,5 +1,11 @@
 # TODO
 
+## Security follow-up
+
+- [x] Move the JWT signing key to required deployment environment variables, with a bounded previous-key verification window.
+- [x] Define Cookie/Token envelope encryption, rotation, and audit design (`docs/credential-security.md`).
+- [ ] Implement the credential repository encryption, lookup fingerprint, and append-only credential audit records.
+
 ## Phase 1（已完成）
 
 - [x] 建立资源授权记录、自有分享记录，以及“资源 + 目标网盘 + 账号”的唯一幂等转存请求约束。

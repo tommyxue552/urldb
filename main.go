@@ -68,6 +68,10 @@ func main() {
 	}
 
 	// 初始化时区设置
+	if err := middleware.ValidateJWTConfiguration(); err != nil {
+		utils.Fatal("JWT configuration is invalid: %v", err)
+	}
+
 	utils.InitTimezone()
 
 	// 设置Gin运行模式

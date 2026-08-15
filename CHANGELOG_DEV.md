@@ -1,5 +1,13 @@
 # 开发变更记录
 
+## 2026-08-15 (P0 credential security baseline)
+
+- Files: `middleware/auth.go`, `middleware/auth_test.go`, `main.go`, `env.example`, `docs/credential-security.md`, `PROJECT_STATUS.md`, `TODO.md`
+- Changed JWT signing from an embedded value to a required `JWT_SECRET` environment variable (at least 32 bytes). Startup fails closed if it is absent or too short.
+- Added optional `JWT_PREVIOUS_SECRET` verification-only support for a bounded, documented key-rotation window; new tokens always use the current key and parsing only accepts HS256.
+- Defined the follow-up encryption boundary for `cks.ck` and `cks.extra`: versioned AES-256-GCM envelopes, KMS-held wrapping key, HMAC fingerprint for lookup, provider-specific rotation, and append-only no-secret audit events.
+- Verification: `gofmt` and `go test -vet=off ./middleware` passed in `golang:1.24.5-alpine`; `git diff --check` passed.
+
 ## 2026-08-15（P0，Provider 合规闸门）
 
 - 文件：`common/authorized_transfer_policy.go`、`common/authorized_transfer_policy_test.go`、`services/authorized_share_service.go`、`task/authorized_transfer_processor.go`、`env.example`、`docs/provider-capability-matrix.md`、`PROJECT_STATUS.md`、`TODO.md`
