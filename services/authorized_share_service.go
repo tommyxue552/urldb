@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,10 +18,11 @@ var (
 	ErrTransferTaskNotRetryable = errors.New("authorized transfer task is not retryable")
 )
 
-// AuthorizedShareService owns the Phase 1 persistence boundary. It never calls
-// a cloud provider: later phases attach a processor to the queued task.
+// AuthorizedShareService owns the authorization, owned-share, and transfer
+// request persistence boundary. It never calls a cloud provider directly.
 type AuthorizedShareService struct {
-	db *gorm.DB
+	db        *gorm.DB
+	linkCheck LinkCheckService
 }
 
 // RetryAuthorizedTransferTask resets the one failed item of an authorized
@@ -56,8 +58,54 @@ func (s *AuthorizedShareService) RetryAuthorizedTransferTask(resourceID, taskID 
 	return &task, nil
 }
 
-func NewAuthorizedShareService(db *gorm.DB) *AuthorizedShareService {
-	return &AuthorizedShareService{db: db}
+func NewAuthorizedShareService(db *gorm.DB, linkCheck LinkCheckService) *AuthorizedShareService {
+	return &AuthorizedShareService{db: db, linkCheck: linkCheck}
+}
+
+// CheckOwnedShares verifies active service-controlled share links for one
+// resource. Only an explicit invalid result changes a link's usable status;
+// disabled checks, timeouts, and undetermined results are recorded but never
+// cause a share to be withdrawn.
+func (s *AuthorizedShareService) CheckOwnedShares(ctx context.Context, resourceID uint, ignoreCache bool) ([]entity.OwnedShare, error) {
+	if s.linkCheck == nil {
+		return nil, errors.New("link check service is unavailable")
+	}
+	var shares []entity.OwnedShare
+	if err := s.db.Where("resource_id = ? AND status = ?", resourceID, "active").Find(&shares).Error; err != nil {
+		return nil, err
+	}
+	if len(shares) == 0 {
+		return shares, nil
+	}
+
+	urls := make([]string, 0, len(shares))
+	for _, share := range shares {
+		urls = append(urls, share.URL)
+	}
+	results := s.linkCheck.CheckURLs(ctx, urls, ignoreCache)
+	now := time.Now()
+	for index := range shares {
+		share := &shares[index]
+		result := results[share.URL]
+		updates := map[string]interface{}{
+			"last_checked_at":         now,
+			"last_check_status":       result.Status,
+			"last_check_method":       result.DetectionMethod,
+			"last_check_fail_reason": result.FailReason,
+		}
+		if result.Status == "invalid" {
+			updates["status"] = "invalid"
+			share.Status = "invalid"
+		}
+		if err := s.db.Model(&entity.OwnedShare{}).Where("id = ? AND status = ?", share.ID, "active").Updates(updates).Error; err != nil {
+			return nil, err
+		}
+		share.LastCheckedAt = &now
+		share.LastCheckStatus = result.Status
+		share.LastCheckMethod = result.DetectionMethod
+		share.LastCheckFailReason = result.FailReason
+	}
+	return shares, nil
 }
 
 func (s *AuthorizedShareService) UpsertAuthorization(authorization *entity.ResourceAuthorization) error {

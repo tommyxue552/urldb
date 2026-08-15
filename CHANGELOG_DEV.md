@@ -1,5 +1,12 @@
 # 开发变更记录
 
+## 2026-08-15（Phase 2，自有分享失效检测）
+
+- 文件：`db/entity/owned_share.go`、`services/authorized_share_service.go`、`handlers/authorized_share_handler.go`、`task/authorized_transfer_processor.go`、`main.go`、`PROJECT_STATUS.md`、`TODO.md`
+- 内容：为 `owned_shares` 增加最近检测时间、结果、检测方式和失败原因；复用既有 `LinkCheckService`/PanCheck 批量检测自有分享 URL。只有明确的 `invalid` 结果会把活跃分享状态回写为 `invalid`；检测关闭、超时或未定结果仅记录检测信息，不撤销链接。新增管理员接口 `POST /api/resources/:id/owned-shares/check?ignore_cache=true`；后续成功转存会清除旧检测元数据并恢复为 `active`。
+- 合规与兼容性：不访问或公开原始资源 URL，不绕过 provider 限制；保留 `resources.save_url` 和既有资源有效性逻辑。
+- 验证：`docker compose config --quiet` 与 `git diff --check` 通过；本机仍无 Go 工具链，待执行 `gofmt` 和 `go test ./task ./services ./handlers`。
+
 ## 2026-08-15（Phase 2，授权转存执行）
 
 - 文件：`task/authorized_transfer_processor.go`、`services/authorized_share_service.go`、`handlers/authorized_share_handler.go`、`main.go`、`PROJECT_STATUS.md`、`TODO.md`。

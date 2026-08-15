@@ -106,7 +106,7 @@ func (p *AuthorizedTransferProcessor) Process(ctx context.Context, taskID uint, 
 	}
 	if err := p.db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "resource_id"}, {Name: "pan_id"}, {Name: "ck_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"url", "fid", "status", "channel", "expires_at", "deleted_at", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"url", "fid", "status", "channel", "expires_at", "last_checked_at", "last_check_status", "last_check_method", "last_check_fail_reason", "deleted_at", "updated_at"}),
 	}).Create(&owned).Error; err != nil {
 		return fmt.Errorf("persist owned share: %w", err)
 	}

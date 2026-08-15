@@ -302,7 +302,8 @@ func main() {
 
 	// 创建任务处理器
 	taskHandler := handlers.NewTaskHandler(repoManager, taskManager)
-	authorizedShareHandler := handlers.NewAuthorizedShareHandler(services.NewAuthorizedShareService(db.DB), taskManager)
+	authorizedShareService := services.NewAuthorizedShareService(db.DB, linkCheckService)
+	authorizedShareHandler := handlers.NewAuthorizedShareHandler(authorizedShareService, taskManager)
 
 	// 创建文件处理器
 	fileHandler := handlers.NewFileHandler(repoManager.FileRepository, repoManager.SystemConfigRepository, repoManager.UserRepository)
@@ -374,6 +375,7 @@ func main() {
 		// public detail-page flow is introduced in a later phase.
 		api.PUT("/resources/:id/authorization", middleware.AuthMiddleware(), middleware.AdminMiddleware(), authorizedShareHandler.UpsertAuthorization)
 		api.GET("/resources/:id/owned-shares", middleware.AuthMiddleware(), middleware.AdminMiddleware(), authorizedShareHandler.ListOwnedShares)
+		api.POST("/resources/:id/owned-shares/check", middleware.AuthMiddleware(), middleware.AdminMiddleware(), authorizedShareHandler.CheckOwnedShares)
 		api.POST("/resources/:id/owned-shares/tasks", middleware.AuthMiddleware(), middleware.AdminMiddleware(), authorizedShareHandler.CreateTransferTask)
 		api.POST("/resources/:id/owned-shares/tasks/:taskID/retry", middleware.AuthMiddleware(), middleware.AdminMiddleware(), authorizedShareHandler.RetryTransferTask)
 		api.POST("/resources/validity/batch", handlers.BatchCheckResourceValidity)

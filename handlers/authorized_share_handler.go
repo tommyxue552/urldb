@@ -51,6 +51,29 @@ func (h *AuthorizedShareHandler) ListOwnedShares(c *gin.Context) {
 	SuccessResponse(c, gin.H{"list": shares, "total": len(shares)})
 }
 
+// CheckOwnedShares checks active owned shares for a resource and writes back
+// an invalid status only when PanCheck returns an explicit invalid conclusion.
+func (h *AuthorizedShareHandler) CheckOwnedShares(c *gin.Context) {
+	resourceID, err := parseResourceID(c)
+	if err != nil {
+		ErrorResponse(c, "invalid resource ID", http.StatusBadRequest)
+		return
+	}
+	ignoreCache := c.Query("ignore_cache") == "true"
+	shares, err := h.service.CheckOwnedShares(c.Request.Context(), resourceID, ignoreCache)
+	if err != nil {
+		ErrorResponse(c, "check owned shares failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	invalid := 0
+	for _, share := range shares {
+		if share.Status == "invalid" {
+			invalid++
+		}
+	}
+	SuccessResponse(c, gin.H{"list": shares, "total": len(shares), "invalid": invalid})
+}
+
 func (h *AuthorizedShareHandler) CreateTransferTask(c *gin.Context) {
 	resourceID, err := parseResourceID(c)
 	if err != nil { ErrorResponse(c, "invalid resource ID", http.StatusBadRequest); return }
