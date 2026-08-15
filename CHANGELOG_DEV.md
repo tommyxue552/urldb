@@ -1,5 +1,21 @@
 # 开发变更记录
 
+## 2026-08-15 (P3 queue migration gate recheck)
+
+- Files: `PROJECT_STATUS.md`, `CHANGELOG_DEV.md`
+- Rechecked the live single-backend Compose deployment and PostgreSQL task
+  tables: both `tasks` and `task_items` remain empty, so there is still no
+  workload evidence to justify a durable queue/worker migration.
+- Confirmed the source measurement endpoint exists, while the running fixed
+  `ctwj/urldb-backend:1.5.0` image does not yet include it and returns 404;
+  capturing the HTTP snapshot therefore requires a rebuilt/deployed image.
+- No synthetic transfer task was created and no execution architecture was
+  changed. The migration TODO remains open until real authorized task traffic
+  or a second-replica requirement supplies the missing gate evidence.
+- Verification: targeted task files are gofmt-clean; the Go 1.24.5 container
+  test command, `docker compose config --quiet`, and `git diff --check`
+  completed successfully.
+
 ## 2026-08-15 (P3 task operations measurement surface)
 
 - Files: `task/operations.go`, `task/task_processor.go`, `db/repo/task_repository.go`, `handlers/task_handler.go`, `main.go`, `docs/task-operations.md`, `PROJECT_STATUS.md`, `TODO.md`

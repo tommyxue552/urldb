@@ -1,5 +1,26 @@
 # 项目状态
 
+## 2026-08-15 P3 queue migration gate recheck
+
+- Rechecked the running single-backend Compose deployment: PostgreSQL still has
+  zero `tasks` rows and zero `task_items` rows, so there is no real seven-day
+  task-volume, backlog-age, latency, or concurrency sample to evaluate.
+- Verified the source tree still contains the administrator-only operations
+  endpoint and its task-manager aggregation code. The currently running
+  `ctwj/urldb-backend:1.5.0` image returns 404 for that newer endpoint, so a
+  rebuilt/deployed image is required before operators can capture the snapshot
+  through HTTP.
+- Decision: do not create synthetic transfer tasks and do not implement the
+  durable queue/worker migration yet. Keep the single-backend operating rule
+  until authorized task traffic exists or a second replica becomes necessary.
+- Verified: targeted task-related files are gofmt-clean; the Go 1.24.5
+  container test command, `docker compose config --quiet`, and `git diff
+  --check` completed successfully. Existing unrelated repository-wide
+  formatting findings were left unchanged.
+- Next: deploy a rebuilt image containing the measurement endpoint, capture a
+  seven-day snapshot after real authorized task traffic exists, then reassess
+  the migration gates before adding another backend replica.
+
 ## 2026-08-15 P3 task operations measurement surface
 
 - Completed: added the administrator-only `GET /api/tasks/operations/status`
