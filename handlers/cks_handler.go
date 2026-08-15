@@ -1,0 +1,554 @@
+package handlers
+
+import (
+	"encoding/json"
+	"errors"
+	"log"
+	"net/http"
+	"strconv"
+	"strings"
+
+	panutils "github.com/ctwj/urldb/common"
+	"github.com/ctwj/urldb/db/converter"
+	"github.com/ctwj/urldb/db/dto"
+	"github.com/ctwj/urldb/db/entity"
+	"github.com/ctwj/urldb/utils"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+)
+
+// GetCks 获取Cookie列表
+func GetCks(c *gin.Context) {
+	cks, err := repoManager.CksRepository.FindAll()
+	if err != nil {
+		ErrorResponse(c, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 使用新的逻辑创建 CksResponse
+	var responses []dto.CksResponse
+	for _, ck := range cks {
+		// 获取平台信息
+		var pan *dto.PanResponse
+		if ck.PanID != 0 {
+			panEntity, err := repoManager.PanRepository.FindByID(ck.PanID)
+			if err == nil && panEntity != nil {
+				pan = &dto.PanResponse{
+					ID:     panEntity.ID,
+					Name:   panEntity.Name,
+					Key:    panEntity.Key,
+					Icon:   panEntity.Icon,
+					Remark: panEntity.Remark,
+				}
+			}
+		}
+
+		// 统计转存资源数
+		count, err := repoManager.ResourceRepository.CountResourcesByCkID(ck.ID)
+		if err != nil {
+			count = 0 // 统计失败时设为0
+		}
+
+		response := dto.CksResponse{
+			ID:               ck.ID,
+			PanID:            ck.PanID,
+			Idx:              ck.Idx,
+			Ck:               ck.Ck,
+			IsValid:          ck.IsValid,
+			Space:            ck.Space,
+			LeftSpace:        ck.LeftSpace,
+			UsedSpace:        ck.UsedSpace,
+			Username:         ck.Username,
+			VipStatus:        ck.VipStatus,
+			ServiceType:      ck.ServiceType,
+			Remark:           ck.Remark,
+			TransferredCount: count,
+			Pan:              pan,
+		}
+		responses = append(responses, response)
+	}
+
+	SuccessResponse(c, responses)
+}
+
+// CreateCks 创建Cookie
+func CreateCks(c *gin.Context) {
+	var req dto.CreateCksRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorResponse(c, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// 获取平台信息以确定服务类型
+	pan, err := repoManager.PanRepository.FindByID(req.PanID)
+	if err != nil {
+		ErrorResponse(c, "平台不存在", http.StatusBadRequest)
+		return
+	}
+
+	// 清理 Cookie 中的换行/制表符（用户从 DevTools 复制时常带入），
+	// 让 DB 存干净值、避免因空白字符差异导致查重假阴性。
+	req.Ck = panutils.SanitizeCookie(req.Ck)
+
+	// FR-009 重复账号检测：(pan_id, ck) 完全一致即视为重复，提示走编辑路径
+	existing, findErr := repoManager.CksRepository.FindByPanIDAndCk(req.PanID, req.Ck)
+	if findErr == nil && existing != nil {
+		ErrorResponse(c, "该"+pan.Remark+"账号已存在，请使用编辑功能更新凭证", http.StatusBadRequest)
+		return
+	}
+	if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
+		ErrorResponse(c, "账号查重失败: "+findErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 根据平台名称确定服务类型
+	var serviceType panutils.ServiceType
+	switch pan.Name {
+	case "quark":
+		serviceType = panutils.Quark
+	case "aliyun", "alipan":
+		serviceType = panutils.Alipan
+	case "baidu":
+		serviceType = panutils.BaiduPan
+	case "uc":
+		serviceType = panutils.UC
+	case "xunlei":
+		serviceType = panutils.Xunlei
+	default:
+		ErrorResponse(c, "不支持的平台类型", http.StatusBadRequest)
+		return
+	}
+
+	// 创建网盘服务实例
+	factory := panutils.GetInstance()
+	service, err := factory.CreatePanServiceByType(serviceType, &panutils.PanConfig{})
+	if err != nil {
+		ErrorResponse(c, "创建网盘服务失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var cks *entity.Cks
+	// 迅雷网盘，使用账号密码登录
+	if serviceType == panutils.Xunlei {
+		// 解析账号密码信息
+		credentials, err := panutils.ParseCredentialsFromCk(req.Ck)
+		if err != nil {
+			ErrorResponse(c, "账号密码格式错误: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var tokenData *panutils.XunleiTokenData
+		var username string
+
+		// 按 client_type 选择身份 profile（android/browser）
+		xunleiService := service.(*panutils.XunleiPanService)
+		xunleiService.SetClientType(credentials.ClientType)
+
+		var token panutils.XunleiTokenData
+		if credentials.ClientType == "browser" {
+			// 迅雷浏览器APP：账号密码登录（对齐 OpenList ThunderBrowser）
+			if credentials.Username == "" || credentials.Password == "" {
+				ErrorResponse(c, "浏览器（迅雷浏览器APP）需填写账号（手机号）和密码", http.StatusBadRequest)
+				return
+			}
+			token, err = xunleiService.LoginWithCredentials(credentials.Username, credentials.Password, credentials.Creditkey)
+			if err != nil {
+				// 账号密码登录触发 review：结构化返回 creditkey + 验证链接，前端走 creditkey 闭环
+				var reviewErr *panutils.XunleiReviewError
+				if errors.As(err, &reviewErr) {
+					// review 作为业务状态返回（HTTP 200）：前端通用拦截会丢弃 4xx 响应体的 data，
+					// 故用 200 + need_review 标记，让前端在成功路径拿到 creditkey/验证链接走闭环
+					SuccessResponse(c, gin.H{
+						"need_review": true,
+						"creditkey":   reviewErr.Creditkey,
+						"review_url":  reviewErr.ReviewURL,
+						"device_id":   reviewErr.DeviceID,
+						"message":     reviewErr.Error(),
+					})
+					return
+				}
+				ErrorResponse(c, "账号密码登录失败: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+		} else {
+			// 安卓（下载管家）：refresh_token 登录
+			if credentials.RefreshToken == "" {
+				ErrorResponse(c, "请提供 refresh_token（用手机迅雷下载管家 APP 抓包获取，xluser-ssl.xunlei.com/v1/auth/token 响应的 refresh_token）", http.StatusBadRequest)
+				return
+			}
+			token, err = xunleiService.LoginByRefreshToken(credentials.RefreshToken)
+			if err != nil {
+				ErrorResponse(c, "refresh_token 登录失败: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		tokenData = &token
+		username = "迅雷账号"
+
+		// 构建extra数据
+		extra := panutils.XunleiExtraData{
+			Token:   tokenData,
+			Captcha: &panutils.CaptchaData{},
+		}
+
+		// 如果有账号密码信息，保存到extra中
+		if credentials.Username != "" && credentials.Password != "" {
+			extra.Credentials = credentials
+		}
+
+		extraStr, _ := json.Marshal(extra)
+
+		// 声明userInfo变量
+		var userInfo *panutils.UserInfo
+
+		// 设置CKSRepository以便获取用户信息
+		xunleiService.SetCKSRepository(repoManager.CksRepository, entity.Cks{})
+
+		// 获取用户信息
+		userInfo, err = xunleiService.GetUserInfo(nil)
+		if err != nil {
+			log.Printf("获取迅雷用户信息失败，使用默认值: %v", err)
+			// 如果获取失败，使用默认值
+			userInfo = &panutils.UserInfo{
+				Username:    username,
+				VIPStatus:   false,
+				ServiceType: "xunlei",
+				TotalSpace:  0,
+				UsedSpace:   0,
+			}
+		}
+
+		leftSpaceBytes := userInfo.TotalSpace - userInfo.UsedSpace
+
+		// 创建Cks实体
+		cks = &entity.Cks{
+			PanID:       req.PanID,
+			Idx:         req.Idx,
+			Ck:          req.Ck, // 保持原始输入
+			IsValid:     true, // 能走到这里说明 GetUserInfo 成功，cookie 有效；与 VIP 状态无关
+			Space:       userInfo.TotalSpace,
+			LeftSpace:   leftSpaceBytes,
+			UsedSpace:   userInfo.UsedSpace,
+			Username:    userInfo.Username,
+			VipStatus:   userInfo.VIPStatus,
+			ServiceType: userInfo.ServiceType,
+			Extra:       string(extraStr),
+			Remark:      req.Remark,
+		}
+	} else {
+		// 获取用户信息
+		utils.Debug("[账号] 调用 GetUserInfo panName=%s serviceType=%s ckLen=%d", pan.Name, serviceType, len(req.Ck))
+		userInfo, err := service.GetUserInfo(&req.Ck)
+		if err != nil {
+			utils.Error("[账号] 获取用户信息失败 panName=%s serviceType=%s err=%v", pan.Name, serviceType, err)
+			ErrorResponse(c, "无法获取用户信息，账号创建失败: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		utils.Debug("[账号] 获取用户信息成功 panName=%s username=%s total=%d used=%d vip=%v", pan.Name, userInfo.Username, userInfo.TotalSpace, userInfo.UsedSpace, userInfo.VIPStatus)
+
+		leftSpaceBytes := userInfo.TotalSpace - userInfo.UsedSpace
+
+		// 创建Cks实体
+		cks = &entity.Cks{
+			PanID:       req.PanID,
+			Idx:         req.Idx,
+			Ck:          req.Ck,
+			IsValid:     true, // 能走到这里说明 GetUserInfo 成功，cookie 有效；与 VIP 状态无关
+			Space:       userInfo.TotalSpace,
+			LeftSpace:   leftSpaceBytes,
+			UsedSpace:   userInfo.UsedSpace,
+			Username:    userInfo.Username,
+			VipStatus:   userInfo.VIPStatus,
+			ServiceType: userInfo.ServiceType,
+			Extra:       userInfo.ExtraData,
+			Remark:      req.Remark,
+		}
+	}
+
+	err = repoManager.CksRepository.Create(cks)
+	if err != nil {
+		ErrorResponse(c, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	SuccessResponse(c, gin.H{
+		"message": "账号创建成功",
+		"cks":     converter.ToCksResponse(cks),
+	})
+}
+
+// parseCapacityToBytes 将容量字符串转换为字节数
+func parseCapacityToBytes(capacity string) int64 {
+	if capacity == "未知" || capacity == "" {
+		return 0
+	}
+
+	// 移除空格并转换为小写
+	capacity = strings.TrimSpace(strings.ToLower(capacity))
+
+	var multiplier int64 = 1
+	if strings.Contains(capacity, "gb") {
+		multiplier = 1024 * 1024 * 1024
+		capacity = strings.Replace(capacity, "gb", "", -1)
+	} else if strings.Contains(capacity, "mb") {
+		multiplier = 1024 * 1024
+		capacity = strings.Replace(capacity, "mb", "", -1)
+	} else if strings.Contains(capacity, "kb") {
+		multiplier = 1024
+		capacity = strings.Replace(capacity, "kb", "", -1)
+	} else if strings.Contains(capacity, "b") {
+		capacity = strings.Replace(capacity, "b", "", -1)
+	}
+
+	// 解析数字
+	capacity = strings.TrimSpace(capacity)
+	if capacity == "" {
+		return 0
+	}
+
+	// 尝试解析浮点数
+	if strings.Contains(capacity, ".") {
+		if val, err := strconv.ParseFloat(capacity, 64); err == nil {
+			return int64(val * float64(multiplier))
+		}
+	} else {
+		if val, err := strconv.ParseInt(capacity, 10, 64); err == nil {
+			return val * multiplier
+		}
+	}
+
+	return 0
+}
+
+// GetCksByID 根据ID获取Cookie详情
+func GetCksByID(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		ErrorResponse(c, "无效的ID", http.StatusBadRequest)
+		return
+	}
+
+	cks, err := repoManager.CksRepository.FindByID(uint(id))
+	if err != nil {
+		ErrorResponse(c, "Cookie不存在", http.StatusNotFound)
+		return
+	}
+
+	response := converter.ToCksResponse(cks)
+	SuccessResponse(c, response)
+}
+
+// UpdateCks 更新Cookie
+func UpdateCks(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		ErrorResponse(c, "无效的ID", http.StatusBadRequest)
+		return
+	}
+
+	var req dto.UpdateCksRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		ErrorResponse(c, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	cks, err := repoManager.CksRepository.FindByID(uint(id))
+	if err != nil {
+		ErrorResponse(c, "Cookie不存在", http.StatusNotFound)
+		return
+	}
+
+	if req.PanID != 0 {
+		cks.PanID = req.PanID
+	}
+	if req.Idx != 0 {
+		cks.Idx = req.Idx
+	}
+	if req.Ck != "" {
+		cks.Ck = req.Ck
+	}
+	// 对于 bool 类型，我们需要检查请求中是否包含该字段
+	// 由于 Go 的 JSON 解析，如果字段存在且为 false，也会被正确解析
+	cks.IsValid = req.IsValid
+	if req.LeftSpace != 0 {
+		cks.LeftSpace = req.LeftSpace
+	}
+	if req.UsedSpace != 0 {
+		cks.UsedSpace = req.UsedSpace
+	}
+	if req.Username != "" {
+		cks.Username = req.Username
+	}
+	cks.VipStatus = req.VipStatus
+	if req.ServiceType != "" {
+		cks.ServiceType = req.ServiceType
+	}
+	if req.Remark != "" {
+		cks.Remark = req.Remark
+	}
+
+	// 使用专门的方法更新，确保更新所有字段包括零值
+	err = repoManager.CksRepository.UpdateWithAllFields(cks)
+	if err != nil {
+		ErrorResponse(c, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	SuccessResponse(c, gin.H{"message": "Cookie更新成功"})
+}
+
+// DeleteCks 删除Cookie
+func DeleteCks(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		ErrorResponse(c, "无效的ID", http.StatusBadRequest)
+		return
+	}
+
+	err = repoManager.CksRepository.Delete(uint(id))
+	if err != nil {
+		ErrorResponse(c, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	SuccessResponse(c, gin.H{"message": "Cookie删除成功"})
+}
+
+// GetCksByID 根据ID获取Cookie详情（使用全局repoManager）
+func GetCksByIDGlobal(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		ErrorResponse(c, "无效的ID", http.StatusBadRequest)
+		return
+	}
+
+	cks, err := repoManager.CksRepository.FindByID(uint(id))
+	if err != nil {
+		ErrorResponse(c, "Cookie不存在", http.StatusNotFound)
+		return
+	}
+
+	response := converter.ToCksResponse(cks)
+	SuccessResponse(c, response)
+}
+
+// RefreshCapacity 刷新账号容量信息
+func RefreshCapacity(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		ErrorResponse(c, "无效的ID", http.StatusBadRequest)
+		return
+	}
+
+	// 获取账号信息
+	cks, err := repoManager.CksRepository.FindByID(uint(id))
+	if err != nil {
+		ErrorResponse(c, "账号不存在", http.StatusNotFound)
+		return
+	}
+
+	// 获取平台信息以确定服务类型
+	pan, err := repoManager.PanRepository.FindByID(cks.PanID)
+	if err != nil {
+		ErrorResponse(c, "平台不存在", http.StatusBadRequest)
+		return
+	}
+
+	// 根据平台名称确定服务类型
+	var serviceType panutils.ServiceType
+	switch pan.Name {
+	case "quark":
+		serviceType = panutils.Quark
+	case "aliyun", "alipan":
+		serviceType = panutils.Alipan
+	case "baidu":
+		serviceType = panutils.BaiduPan
+	case "uc":
+		serviceType = panutils.UC
+	case "xunlei":
+		serviceType = panutils.Xunlei
+	default:
+		ErrorResponse(c, "不支持的平台类型", http.StatusBadRequest)
+		return
+	}
+
+	// 创建网盘服务实例
+	factory := panutils.GetInstance()
+	service, err := factory.CreatePanServiceByType(serviceType, &panutils.PanConfig{})
+	if err != nil {
+		ErrorResponse(c, "创建网盘服务失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var userInfo *panutils.UserInfo
+	service.SetCKSRepository(repoManager.CksRepository, *cks) // 迅雷需要初始化 token 后才能获取，
+
+	// 根据服务类型调用不同的GetUserInfo方法
+	switch s := service.(type) {
+	case *panutils.XunleiPanService:
+		// 迅雷网盘使用存储在extra中的token，不需要传递ck参数
+		userInfo, err = s.GetUserInfo(nil)
+	default:
+		// 其他网盘使用ck参数
+		userInfo, err = service.GetUserInfo(&cks.Ck)
+	}
+	if err != nil {
+		ErrorResponse(c, "无法获取用户信息，刷新失败: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	leftSpaceBytes := userInfo.TotalSpace - userInfo.UsedSpace
+
+	// 更新账号信息
+	cks.Username = userInfo.Username
+	cks.VipStatus = userInfo.VIPStatus
+	cks.ServiceType = userInfo.ServiceType
+	cks.Space = userInfo.TotalSpace
+	cks.LeftSpace = leftSpaceBytes
+	cks.UsedSpace = userInfo.UsedSpace
+	// GetUserInfo 成功本身就证明 cookie 有效，与 VIP 状态无关。
+	// 历史代码曾把 IsValid 绑到 VIPStatus，导致非 VIP 账号被误判为无效；这里强制 true。
+	cks.IsValid = true
+	// 保留 GetUserInfo 返回的运行期数据（如阿里云盘/迅雷刷新轮换后的 token），避免被旧 Extra 覆盖
+	if userInfo.ExtraData != "" {
+		cks.Extra = userInfo.ExtraData
+	}
+
+	err = repoManager.CksRepository.UpdateWithAllFields(cks)
+	if err != nil {
+		ErrorResponse(c, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	SuccessResponse(c, gin.H{
+		"message": "容量信息刷新成功",
+		"cks":     converter.ToCksResponse(cks),
+	})
+}
+
+// DeleteRelatedResources 删除关联资源
+func DeleteRelatedResources(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		ErrorResponse(c, "无效的ID", http.StatusBadRequest)
+		return
+	}
+
+	// 调用资源库删除关联资源
+	affectedRows, err := repoManager.ResourceRepository.DeleteRelatedResources(uint(id))
+	if err != nil {
+		ErrorResponse(c, "删除关联资源失败: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	SuccessResponse(c, gin.H{
+		"message":       "关联资源删除成功",
+		"affected_rows": affectedRows,
+	})
+}
