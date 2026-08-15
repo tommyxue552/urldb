@@ -44,12 +44,16 @@ type SyncProgress struct {
 
 // MeilisearchStatus Meilisearch状态
 type MeilisearchStatus struct {
-	Enabled       bool      `json:"enabled"`
-	Healthy       bool      `json:"healthy"`
-	LastCheck     time.Time `json:"last_check"`
-	ErrorCount    int       `json:"error_count"`
-	LastError     string    `json:"last_error"`
-	DocumentCount int64     `json:"document_count"`
+	Enabled             bool       `json:"enabled"`
+	Healthy             bool       `json:"healthy"`
+	LastCheck           time.Time  `json:"last_check"`
+	ErrorCount          int        `json:"error_count"`
+	LastError           string     `json:"last_error"`
+	DocumentCount       int64      `json:"document_count"`
+	UnsyncedCount       int64      `json:"unsynced_count"`
+	SearchFallbackCount int64      `json:"search_fallback_count"`
+	LastFallbackAt      *time.Time `json:"last_fallback_at,omitempty"`
+	LastFallbackReason  string     `json:"last_fallback_reason,omitempty"`
 }
 
 // NewMeilisearchManager 创建Meilisearch管理器
@@ -139,6 +143,12 @@ func (m *MeilisearchManager) Initialize() error {
 			m.checkHealth()
 			// 启动监控
 			go m.monitorLoop()
+			// Existing records remain explicitly marked unsynced until the index
+			// accepts them. Start the durable, resumable reconciliation path after
+			// startup instead of relying on a one-off administrator action.
+			if _, err := m.SyncAllResources(); err != nil {
+				utils.Error("启动Meilisearch增量同步失败: %v", err)
+			}
 		}()
 	} else {
 		utils.Debug("Meilisearch未启用")
@@ -171,15 +181,17 @@ func (m *MeilisearchManager) GetService() *MeilisearchService {
 // GetStatus 获取状态
 func (m *MeilisearchManager) GetStatus() (MeilisearchStatus, error) {
 	m.mutex.RLock()
-	defer m.mutex.RUnlock()
+	service := m.service
+	status := m.status
+	m.mutex.RUnlock()
 
-	utils.Debug("获取Meilisearch状态 - 启用状态: %v, 健康状态: %v, 服务实例: %v", m.status.Enabled, m.status.Healthy, m.service != nil)
+	utils.Debug("获取Meilisearch状态 - 启用状态: %v, 健康状态: %v, 服务实例: %v", status.Enabled, status.Healthy, service != nil)
 
-	if m.service != nil && m.service.IsEnabled() {
+	if service != nil && service.IsEnabled() {
 		utils.Debug("Meilisearch服务已初始化且启用，尝试获取索引统计")
 
 		// 获取索引统计
-		stats, err := m.service.GetIndexStats()
+		stats, err := service.GetIndexStats()
 		if err != nil {
 			utils.Error("获取Meilisearch索引统计失败: %v", err)
 			// 即使获取统计失败，也返回当前状态
@@ -188,13 +200,13 @@ func (m *MeilisearchManager) GetStatus() (MeilisearchStatus, error) {
 
 			// 更新文档数量
 			if count, ok := stats["numberOfDocuments"].(float64); ok {
-				m.status.DocumentCount = int64(count)
+				status.DocumentCount = int64(count)
 				utils.Debug("文档数量 (float64): %d", int64(count))
 			} else if count, ok := stats["numberOfDocuments"].(int64); ok {
-				m.status.DocumentCount = count
+				status.DocumentCount = count
 				utils.Debug("文档数量 (int64): %d", count)
 			} else if count, ok := stats["numberOfDocuments"].(int); ok {
-				m.status.DocumentCount = int64(count)
+				status.DocumentCount = int64(count)
 				utils.Debug("文档数量 (int): %d", int64(count))
 			} else {
 				utils.Error("无法解析文档数量，类型: %T, 值: %v", stats["numberOfDocuments"], stats["numberOfDocuments"])
@@ -204,10 +216,34 @@ func (m *MeilisearchManager) GetStatus() (MeilisearchStatus, error) {
 			// 启用状态应该由配置控制，而不是由服务状态控制
 		}
 	} else {
-		utils.Debug("Meilisearch服务未初始化或未启用 - service: %v, enabled: %v", m.service != nil, m.service != nil && m.service.IsEnabled())
+		utils.Debug("Meilisearch服务未初始化或未启用 - service: %v, enabled: %v", service != nil, service != nil && service.IsEnabled())
 	}
 
-	return m.status, nil
+	if unsynced, err := m.repoMgr.ResourceRepository.CountUnsyncedToMeilisearch(); err == nil {
+		status.UnsyncedCount = unsynced
+	}
+
+	m.mutex.Lock()
+	m.status.DocumentCount = status.DocumentCount
+	m.status.UnsyncedCount = status.UnsyncedCount
+	status = m.status
+	m.mutex.Unlock()
+	return status, nil
+}
+
+// RecordSearchFallback records a runtime fallback without retaining queries or
+// client data. Operators can use it with the unsynced count to spot a degraded
+// search index while PostgreSQL continues to serve safe results.
+func (m *MeilisearchManager) RecordSearchFallback(reason string) {
+	if m == nil {
+		return
+	}
+	now := time.Now()
+	m.mutex.Lock()
+	m.status.SearchFallbackCount++
+	m.status.LastFallbackAt = &now
+	m.status.LastFallbackReason = reason
+	m.mutex.Unlock()
 }
 
 // GetStatusWithHealthCheck 获取状态并同时进行健康检查

@@ -145,7 +145,10 @@ func GetResources(c *gin.Context) {
 				return
 			} else {
 				utils.Error("Meilisearch搜索失败，回退到数据库搜索: %v", err)
+				meilisearchManager.RecordSearchFallback(err.Error())
 			}
+		} else {
+			meilisearchManager.RecordSearchFallback("Meilisearch service unavailable")
 		}
 	}
 

@@ -1,5 +1,12 @@
 # 开发变更记录
 
+## 2026-08-15 (P2 Meilisearch operations and fallback monitoring)
+
+- Files: `docker-compose.yml`, `env.example`, `services/meilisearch_manager.go`, `handlers/public_api_handler.go`, `handlers/resource_handler.go`, `PROJECT_STATUS.md`, `TODO.md`
+- Added the optional `search` Compose profile for a persistent, health-checked Meilisearch service. It is internal-only and requires an injected master key; PostgreSQL remains the default and does not require the profile.
+- Meilisearch status now exposes index backlog plus in-process fallback telemetry. On a Meilisearch query failure/unavailable service, the request is observed and served through PostgreSQL without recording user queries, IP addresses, or secrets in the telemetry.
+- Enabled Meilisearch starts the existing resumable reconciliation for unsynced resources after the first health check, preserving the manual control and retry endpoints.
+
 ## 2026-08-15 (P0 credential repository encryption)
 
 - Files: `db/credential/`, `db/credential_migration.go`, `db/entity/cks.go`, `db/entity/credential_audit.go`, `db/repo/cks_repository.go`, `db/connection.go`, `handlers/cks_handler.go`, `main.go`, `env.example`, `PROJECT_STATUS.md`, `TODO.md`

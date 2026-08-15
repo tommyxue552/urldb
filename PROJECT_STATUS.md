@@ -15,6 +15,13 @@
 - Verified: `gofmt`, `go test -vet=off ./db/... ./handlers ./common ./task ./services ./middleware`, and `git diff --check` passed in `golang:1.24.5-alpine`.
 - Next: begin P2 Meilisearch operations, index synchronization, and fallback monitoring.
 
+## 2026-08-15 P2 Meilisearch operations and fallback monitoring
+
+- Completed: added an optional, profile-gated `meilisearch` Compose service with persistent storage and a health check. The service is not published to the host network and requires an externally supplied `MEILI_MASTER_KEY`.
+- Completed: enabled Meilisearch now starts the existing resumable unsynced-resource reconciliation after its initial health check; resources are marked synced only through the existing successful write path.
+- Completed: the administrator status API now reports unsynced resources and in-process fallback counters/reason/timestamp. Public and administrator search calls record a fallback only when an enabled Meilisearch service is unavailable or returns an error; PostgreSQL remains the compatible fallback.
+- Next: add provider contract tests and a compliance audit/operations dashboard (P3).
+
 - 已完成：获取 urlDB v1.5.0 源码快照；完成代码/部署梳理；Docker Desktop 已启动；官方 Compose 已成功运行，首页、登录页、版本 API 和管理员登录已验证；已建立二开文档。
 - 正在开发：P0 安全与合规基础设施。
 - 下一步：落实 JWT 密钥环境变量化，并设计 Cookie/Token 的加密、轮换和审计方案。

@@ -248,6 +248,8 @@ func (h *PublicAPIHandler) SearchResources(c *gin.Context) {
 
 	var resources []entity.Resource
 	var total int64
+	searchBackend := "postgresql"
+	meilisearchSucceeded := false
 
 	// 如果启用了Meilisearch，优先使用Meilisearch搜索
 	if meilisearchManager != nil && meilisearchManager.IsEnabled() {
@@ -295,14 +297,19 @@ func (h *PublicAPIHandler) SearchResources(c *gin.Context) {
 					resources = append(resources, resource)
 				}
 				total = docTotal
+				meilisearchSucceeded = true
+				searchBackend = "meilisearch"
 			} else {
 				utils.Error("Meilisearch搜索失败，回退到数据库搜索: %v", err)
+				meilisearchManager.RecordSearchFallback(err.Error())
 			}
+		} else {
+			meilisearchManager.RecordSearchFallback("Meilisearch service unavailable")
 		}
 	}
 
 	// 如果Meilisearch未启用或搜索失败，使用数据库搜索
-	if meilisearchManager == nil || !meilisearchManager.IsEnabled() || err != nil {
+	if !meilisearchSucceeded {
 		// 构建搜索条件
 		params := map[string]interface{}{
 			"page":      page,
@@ -370,10 +377,11 @@ func (h *PublicAPIHandler) SearchResources(c *gin.Context) {
 
 	// 构建响应数据
 	responseData := gin.H{
-		"list":  resourceResponses,
-		"total": total,
-		"page":  page,
-		"limit": pageSize,
+		"list":           resourceResponses,
+		"search_backend": searchBackend,
+		"total":          total,
+		"page":           page,
+		"limit":          pageSize,
 	}
 
 	h.logAPIAccess(c, startTime, len(resourceResponses), responseData, "")
@@ -520,13 +528,13 @@ func GetPublicSiteVerificationCode(c *gin.Context) {
 	verificationCode := map[string]interface{}{
 		"site_url": siteURL,
 		"verification_methods": map[string]string{
-			"html_tag":     `<meta name="google-site-verification" content="your-verification-code">`,
-			"dns_txt":      `google-site-verification=your-verification-code`,
-			"html_file":    `google1234567890abcdef.html`,
+			"html_tag":  `<meta name="google-site-verification" content="your-verification-code">`,
+			"dns_txt":   `google-site-verification=your-verification-code`,
+			"html_file": `google1234567890abcdef.html`,
 		},
 		"instructions": map[string]string{
-			"html_tag": "请将以下meta标签添加到您网站的首页<head>部分中",
-			"dns_txt":  "请添加以下TXT记录到您的DNS配置中",
+			"html_tag":  "请将以下meta标签添加到您网站的首页<head>部分中",
+			"dns_txt":   "请添加以下TXT记录到您的DNS配置中",
 			"html_file": "请在网站根目录创建包含指定内容的HTML文件",
 		},
 	}
