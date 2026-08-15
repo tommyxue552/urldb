@@ -1,5 +1,13 @@
 # 开发变更记录
 
+## 2026-08-15 (P0 credential repository encryption)
+
+- Files: `db/credential/`, `db/credential_migration.go`, `db/entity/cks.go`, `db/entity/credential_audit.go`, `db/repo/cks_repository.go`, `db/connection.go`, `handlers/cks_handler.go`, `main.go`, `env.example`, `PROJECT_STATUS.md`, `TODO.md`
+- Changed provider credential persistence to versioned AES-256-GCM envelopes with account-and-column authenticated data, and added a separate HMAC-SHA-256 lookup fingerprint for duplicate detection. Provider interfaces remain unchanged because only repository reads decrypt values into process memory.
+- Added the append-only `credential_audits` table. It records only account/provider/action/outcome/actor/IP/request/key-version metadata for credential lifecycle events and decrypt failures; it never stores credential material.
+- Added an explicit `MIGRATE=true` legacy-row conversion path, fail-closed reads for plaintext/corrupt envelopes, required encryption/fingerprint startup secrets, and administrator protection for the credential-list route.
+- Verification: `gofmt`, `go test -vet=off ./db/... ./handlers ./common ./task ./services ./middleware`, and `git diff --check` passed in `golang:1.24.5-alpine`.
+
 ## 2026-08-15 (P0 credential security baseline)
 
 - Files: `middleware/auth.go`, `middleware/auth_test.go`, `main.go`, `env.example`, `docs/credential-security.md`, `PROJECT_STATUS.md`, `TODO.md`

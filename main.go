@@ -13,6 +13,7 @@ import (
 	"github.com/ctwj/urldb/cmd/cmdplugin"
 	"github.com/ctwj/urldb/config"
 	"github.com/ctwj/urldb/db"
+	"github.com/ctwj/urldb/db/credential"
 	"github.com/ctwj/urldb/db/entity"
 	"github.com/ctwj/urldb/db/repo"
 	"github.com/ctwj/urldb/handlers"
@@ -70,6 +71,9 @@ func main() {
 	// 初始化时区设置
 	if err := middleware.ValidateJWTConfiguration(); err != nil {
 		utils.Fatal("JWT configuration is invalid: %v", err)
+	}
+	if err := credential.ValidateConfiguration(); err != nil {
+		utils.Fatal("credential encryption configuration is invalid: %v", err)
 	}
 
 	utils.InitTimezone()
@@ -415,7 +419,7 @@ func main() {
 		api.GET("/pans/:id", middleware.AuthMiddleware(), middleware.AdminMiddleware(), handlers.GetPan)
 
 		// Cookie管理
-		api.GET("/cks", handlers.GetCks)
+		api.GET("/cks", middleware.AuthMiddleware(), middleware.AdminMiddleware(), handlers.GetCks)
 		api.POST("/cks", middleware.AuthMiddleware(), middleware.AdminMiddleware(), handlers.CreateCks)
 		api.PUT("/cks/:id", middleware.AuthMiddleware(), middleware.AdminMiddleware(), handlers.UpdateCks)
 		api.DELETE("/cks/:id", middleware.AuthMiddleware(), middleware.AdminMiddleware(), handlers.DeleteCks)

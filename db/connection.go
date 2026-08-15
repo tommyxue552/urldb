@@ -79,8 +79,8 @@ func InitDB() error {
 	maxIdleConns := getEnvInt("DB_MAX_IDLE_CONNS", 20)
 	connMaxLifetime := getEnvInt("DB_CONN_MAX_LIFETIME_MINUTES", 30)
 
-	sqlDB.SetMaxOpenConns(maxOpenConns)                               // 最大打开连接数
-	sqlDB.SetMaxIdleConns(maxIdleConns)                               // 最大空闲连接数
+	sqlDB.SetMaxOpenConns(maxOpenConns)                                    // 最大打开连接数
+	sqlDB.SetMaxIdleConns(maxIdleConns)                                    // 最大空闲连接数
 	sqlDB.SetConnMaxLifetime(time.Duration(connMaxLifetime) * time.Minute) // 连接最大生命周期
 
 	utils.Info("数据库连接池配置 - 最大连接: %d, 空闲连接: %d, 生命周期: %d分钟",
@@ -94,6 +94,7 @@ func InitDB() error {
 			&entity.Category{},
 			&entity.Pan{},
 			&entity.Cks{},
+			&entity.CredentialAudit{},
 			&entity.Tag{},
 			&entity.Resource{},
 			&entity.ResourceAuthorization{},
@@ -132,6 +133,9 @@ func InitDB() error {
 		)
 		if err != nil {
 			utils.Fatal("数据库迁移失败: %v", err)
+		}
+		if err := migrateLegacyCredentials(DB); err != nil {
+			utils.Fatal("凭据加密迁移失败: %v", err)
 		}
 		utils.Info("数据库迁移完成")
 	} else {

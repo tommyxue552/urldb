@@ -7,6 +7,14 @@
 - Verified: `gofmt` and `go test -vet=off ./middleware` passed in the official `golang:1.24.5-alpine` container; `git diff --check` passed.
 - Next: implement the documented credential repository encryption, HMAC lookup fingerprint, and audit table before allowing production credential ingestion.
 
+## 2026-08-15 Credential repository encryption
+
+- Completed: `cks.ck` and `cks.extra` are encrypted by the repository using versioned AES-256-GCM envelopes; account ID and column name are authenticated data. `CREDENTIAL_ENCRYPTION_KEY` and the separate `CREDENTIAL_FINGERPRINT_KEY` are both required startup secrets.
+- Completed: account duplicate lookup uses `ck_fingerprint` (HMAC-SHA-256) instead of ciphertext equality. Existing plaintext records are converted during an explicit `MIGRATE=true` startup, and repository reads fail closed for unencrypted/corrupt values.
+- Completed: added append-only `credential_audits` metadata records for create, update, delete, migration, and decrypt failures. Administrator-originated writes carry actor, client IP, and request ID; no credential material is recorded.
+- Verified: `gofmt`, `go test -vet=off ./db/... ./handlers ./common ./task ./services ./middleware`, and `git diff --check` passed in `golang:1.24.5-alpine`.
+- Next: begin P2 Meilisearch operations, index synchronization, and fallback monitoring.
+
 - 已完成：获取 urlDB v1.5.0 源码快照；完成代码/部署梳理；Docker Desktop 已启动；官方 Compose 已成功运行，首页、登录页、版本 API 和管理员登录已验证；已建立二开文档。
 - 正在开发：P0 安全与合规基础设施。
 - 下一步：落实 JWT 密钥环境变量化，并设计 Cookie/Token 的加密、轮换和审计方案。

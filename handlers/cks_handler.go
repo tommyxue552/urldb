@@ -12,11 +12,20 @@ import (
 	"github.com/ctwj/urldb/db/converter"
 	"github.com/ctwj/urldb/db/dto"
 	"github.com/ctwj/urldb/db/entity"
+	"github.com/ctwj/urldb/db/repo"
 	"github.com/ctwj/urldb/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+func cksRepositoryForRequest(c *gin.Context) repo.CksRepository {
+	return repoManager.CksRepository.WithAuditContext(repo.CredentialAuditContext{
+		Actor:     c.GetString("username"),
+		SourceIP:  c.ClientIP(),
+		RequestID: c.GetString("request_id"),
+	})
+}
 
 // GetCks 获取Cookie列表
 func GetCks(c *gin.Context) {
@@ -226,7 +235,7 @@ func CreateCks(c *gin.Context) {
 			PanID:       req.PanID,
 			Idx:         req.Idx,
 			Ck:          req.Ck, // 保持原始输入
-			IsValid:     true, // 能走到这里说明 GetUserInfo 成功，cookie 有效；与 VIP 状态无关
+			IsValid:     true,   // 能走到这里说明 GetUserInfo 成功，cookie 有效；与 VIP 状态无关
 			Space:       userInfo.TotalSpace,
 			LeftSpace:   leftSpaceBytes,
 			UsedSpace:   userInfo.UsedSpace,
@@ -266,7 +275,7 @@ func CreateCks(c *gin.Context) {
 		}
 	}
 
-	err = repoManager.CksRepository.Create(cks)
+	err = cksRepositoryForRequest(c).Create(cks)
 	if err != nil {
 		ErrorResponse(c, err.Error(), http.StatusInternalServerError)
 		return
@@ -391,7 +400,7 @@ func UpdateCks(c *gin.Context) {
 	}
 
 	// 使用专门的方法更新，确保更新所有字段包括零值
-	err = repoManager.CksRepository.UpdateWithAllFields(cks)
+	err = cksRepositoryForRequest(c).UpdateWithAllFields(cks)
 	if err != nil {
 		ErrorResponse(c, err.Error(), http.StatusInternalServerError)
 		return
@@ -409,7 +418,7 @@ func DeleteCks(c *gin.Context) {
 		return
 	}
 
-	err = repoManager.CksRepository.Delete(uint(id))
+	err = cksRepositoryForRequest(c).Delete(uint(id))
 	if err != nil {
 		ErrorResponse(c, err.Error(), http.StatusInternalServerError)
 		return
@@ -519,7 +528,7 @@ func RefreshCapacity(c *gin.Context) {
 		cks.Extra = userInfo.ExtraData
 	}
 
-	err = repoManager.CksRepository.UpdateWithAllFields(cks)
+	err = cksRepositoryForRequest(c).UpdateWithAllFields(cks)
 	if err != nil {
 		ErrorResponse(c, err.Error(), http.StatusInternalServerError)
 		return

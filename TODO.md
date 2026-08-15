@@ -4,7 +4,7 @@
 
 - [x] Move the JWT signing key to required deployment environment variables, with a bounded previous-key verification window.
 - [x] Define Cookie/Token envelope encryption, rotation, and audit design (`docs/credential-security.md`).
-- [ ] Implement the credential repository encryption, lookup fingerprint, and append-only credential audit records.
+- [x] Implement the credential repository encryption, lookup fingerprint, and append-only credential audit records.
 
 ## Phase 1（已完成）
 
@@ -13,8 +13,8 @@
 ## P0
 
 - [x] 明确每个平台官方/获准的转存与分享接口、资源授权证据和保留期限，并以默认拒绝的 provider 合规闸门限制自动转存（见 `docs/provider-capability-matrix.md`）。
-- [ ] 把 JWT 密钥改为环境变量并制定 Cookie/Token 加密、轮换和审计方案。
-- [ ] 为自有分享链接设计独立记录及唯一性/幂等约束。
+- [x] 把 JWT 密钥改为环境变量并制定 Cookie/Token 加密、轮换和审计方案。
+- [x] 为自有分享链接设计独立记录及唯一性/幂等约束。
 
 ## P1
 
